@@ -5,14 +5,14 @@ import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings('ignore')
 
-df = pd.read_csv("tracking_test_v2.csv")
+df = pd.read_csv("tracking_test_labeled.csv")
 files = df["image_filename"].unique()
 df_individuals = []
 for f in files:
     df_individuals.append(df[df.image_filename == f])
 
 def get_frame(idx):
-    img_current = plt.imread(df_individuals[idx].iloc[0]["image_filename"])
+    img_current = plt.imread("/Users/jonathanzhu/nematostella_videos/tracking_test/" + df_individuals[idx].iloc[0]["image_filename"])
     fig, ax = plt.subplots()
     ax.imshow(img_current, cmap="gray")
     for i in range(len(df_individuals[idx])):
