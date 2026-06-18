@@ -140,6 +140,29 @@ def load_yolo_model():
     except Exception as ex:
         ui.notify(f'Failed to load model: {ex}', type='negative')
 
+def iou(a, b):
+    """Intersection-over-Union for two boxes given as dicts with x1/y1/x2/y2."""
+    ix1 = max(a['x1'], b['x1']);  iy1 = max(a['y1'], b['y1'])
+    ix2 = min(a['x2'], b['x2']);  iy2 = min(a['y2'], b['y2'])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    if inter == 0:
+        return 0.0
+    area_a = (a['x2'] - a['x1']) * (a['y2'] - a['y1'])
+    area_b = (b['x2'] - b['x1']) * (b['y2'] - b['y1'])
+    return inter / (area_a + area_b - inter)
+
+def deduplicate(candidates, iou_threshold=0.5):
+    """
+    Greedy duplicate removal: sort by confidence descending, then suppress
+    any later box whose IoU with an already-kept box exceeds the threshold.
+    """
+    ranked = sorted(candidates, key=lambda b: b['conf'], reverse=True)
+    kept = []
+    for candidate in ranked:
+        if all(iou(candidate, k) <= iou_threshold for k in kept):
+            kept.append(candidate)
+    return kept
+
 def run_yolo():
     """Run inference and add predictions as ordinary saveable boxes."""
     if yolo_model is None:
@@ -150,18 +173,26 @@ def run_yolo():
         return
     try:
         results = yolo_model(current_image, verbose=False)[0]
-        added = 0
+        # Collect raw predictions
+        candidates = []
         for box in results.boxes:
             x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
             cls_name = results.names[int(box.cls)]
             conf     = float(box.conf)
-            # Store as a plain box — class label is the YOLO class name + confidence
-            label = f'{cls_name} {conf:.0%}'
-            boxes.append({'class': label, 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
-            added += 1
+            label    = f'{cls_name} {conf:.0%}'
+            candidates.append({'class': label, 'x1': x1, 'y1': y1,
+                                'x2': x2, 'y2': y2, 'conf': conf})
+        # Remove overlapping duplicates (IoU > 50%)
+        kept = deduplicate(candidates, iou_threshold=0.5)
+        removed = len(candidates) - len(kept)
+        for b in kept:
+            boxes.append({k: v for k, v in b.items() if k != 'conf'})
         redraw()
         update_status()
-        ui.notify(f'YOLO added {added} box(es) — edit or delete as needed', type='positive')
+        msg = f'YOLO added {len(kept)} box(es)'
+        if removed:
+            msg += f' — {removed} duplicate(s) removed'
+        ui.notify(msg, type='positive')
     except Exception as ex:
         ui.notify(f'Inference error: {ex}', type='negative')
 
@@ -211,9 +242,30 @@ def load_directory():
     file_select.update()
     switch_to_image(os.path.join(path, files[0]))
     ui.notify(f'{len(files)} image(s) found')
+    update_nav_buttons()
 
 def on_file_select(e):
     switch_to_image(os.path.join(dir_input.value.strip(), e.value))
+
+def step_image(delta):
+    """Move forward (+1) or backward (-1) through the file list."""
+    files = file_select.options
+    if not files or file_select.value not in files:
+        return
+    idx = files.index(file_select.value) + delta
+    idx = max(0, min(idx, len(files) - 1))
+    file_select.value = files[idx]
+    file_select.update()
+    switch_to_image(os.path.join(dir_input.value.strip(), files[idx]))
+
+def update_nav_buttons():
+    files = file_select.options
+    if not files or file_select.value not in files:
+        prev_btn.disable(); next_btn.disable()
+        return
+    idx = files.index(file_select.value)
+    prev_btn.set_enabled(idx > 0)
+    next_btn.set_enabled(idx < len(files) - 1)
 
 def switch_to_image(full_path):
     global current_image
@@ -225,6 +277,10 @@ def switch_to_image(full_path):
     update_delete_button()
     annotation_row.set_visibility(True)
     update_status()
+    update_nav_buttons()
+    # Auto-run YOLO if a model is loaded and this image has no existing annotations
+    if yolo_model is not None and len(boxes) == 0:
+        run_yolo()
 
 def export_csv():
     save_current_boxes()
@@ -256,7 +312,12 @@ with ui.row().classes('items-center gap-2 w-full mb-2'):
     run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined')
     run_yolo_btn.disable()
 
-file_select = ui.select(options=[], label='Select image', on_change=on_file_select).classes('w-full mb-2')
+with ui.row().classes('items-center gap-2 w-full mb-2'):
+    prev_btn = ui.button(icon='chevron_left', on_click=lambda: step_image(-1)).props('outline')
+    file_select = ui.select(options=[], label='Select image', on_change=on_file_select).classes('flex-grow')
+    next_btn = ui.button(icon='chevron_right', on_click=lambda: step_image(1)).props('outline')
+prev_btn.disable()
+next_btn.disable()
 
 with ui.row().classes('items-center gap-4 mb-2') as annotation_row:
     ui.label('Active Class:').classes('font-semibold')
