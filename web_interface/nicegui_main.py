@@ -7,22 +7,20 @@ CLASSES = {
     'Class A': 'SkyBlue',
     'Class B': 'Tomato',
 }
-YOLO_COLOR   = 'MediumSeaGreen'   # SVG color for YOLO prediction boxes
-YOLO_CLASS   = '__yolo__'          # Internal sentinel stored in the boxes list
+YOLO_COLOR = 'MediumSeaGreen'
 
 # ── State ──────────────────────────────────────────────────────────────────────
 start_x        = None
 start_y        = None
-boxes          = []                # {'class', 'x1','y1','x2','y2', 'conf'(opt)}
+boxes          = []   # {'class', 'x1','y1','x2','y2'}  — all boxes treated equally
 current_class  = list(CLASSES.keys())[0]
 current_image  = None
 selected_index = None
+yolo_model     = None
 
-yolo_model     = None              # Loaded ultralytics YOLO instance (or None)
+all_annotations = pd.DataFrame(columns=['filename', 'class', 'x1', 'y1', 'x2', 'y2'])
 
-all_annotations = pd.DataFrame(columns=['filename','class','x1','y1','x2','y2'])
-
-# ── Hit-test & drawing ─────────────────────────────────────────────────────────
+# ── Drawing & selection ────────────────────────────────────────────────────────
 def hit_test(x, y):
     for i in range(len(boxes) - 1, -1, -1):
         b = boxes[i]
@@ -41,9 +39,7 @@ def mouse_handler(e: events.MouseEventArguments):
             hit = hit_test(e.image_x, e.image_y)
             selected_index = hit
             if hit is not None:
-                cls = boxes[hit]['class']
-                label = 'YOLO prediction' if cls == YOLO_CLASS else cls
-                ui.notify(f'Selected box {hit + 1} ({label})')
+                ui.notify(f'Selected box {hit + 1} ({boxes[hit]["class"]})')
         else:
             selected_index = None
             boxes.append({'class': current_class, 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
@@ -52,31 +48,34 @@ def mouse_handler(e: events.MouseEventArguments):
         update_delete_button()
         start_x = start_y = None
 
+def box_color(cls):
+    if cls in CLASSES:
+        return CLASSES[cls]
+    # Any YOLO-predicted class not in CLASSES dict gets the YOLO color
+    return YOLO_COLOR
+
 def redraw():
     svg = ''
     for i, box in enumerate(boxes):
-        is_yolo    = box['class'] == YOLO_CLASS
-        color      = YOLO_COLOR if is_yolo else CLASSES.get(box['class'], 'White')
-        is_sel     = (i == selected_index)
-        x, y       = box['x1'], box['y1']
-        w, h       = box['x2'] - box['x1'], box['y2'] - box['y1']
-
-        if is_yolo:
-            conf  = box.get('conf', 0)
-            label = f"{i+1}: {box.get('yolo_class','?')} {conf:.0%}"
-            dash  = 'stroke-dasharray="6 3"'
-        else:
-            label = f"{i+1}: {box['class']}"
-            dash  = ''
-
-        stroke_w = '5' if is_sel else '3'
-        fill     = 'rgba(255,255,255,0.15)' if is_sel else 'none'
+        color  = box_color(box['class'])
+        is_sel = (i == selected_index)
+        x, y   = box['x1'], box['y1']
+        w, h   = box['x2'] - box['x1'], box['y2'] - box['y1']
+        is_yolo = box['class'] not in CLASSES
+        label   = f"{i + 1}: {box['class']}"
+        stroke  = '5' if is_sel else '3'
+        fill    = 'rgba(255,255,255,0.15)' if is_sel else 'none'
+        # Draw the bounding rectangle for every box
         svg += (
             f'<rect x="{x}" y="{y}" width="{w}" height="{h}" '
-            f'fill="{fill}" stroke="{color}" stroke-width="{stroke_w}" {dash}/>'
-            f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-            f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+            f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
+        # Only draw the filled label tag for manual boxes
+        if not is_yolo:
+            svg += (
+                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+            )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
@@ -142,35 +141,27 @@ def load_yolo_model():
         ui.notify(f'Failed to load model: {ex}', type='negative')
 
 def run_yolo():
-    """Run inference on the current image and add predictions as YOLO boxes."""
+    """Run inference and add predictions as ordinary saveable boxes."""
     if yolo_model is None:
         ui.notify('Load a model first', type='warning')
         return
     if current_image is None:
         ui.notify('No image loaded', type='warning')
         return
-
-    # Remove any existing YOLO boxes so re-running replaces rather than appends
-    boxes[:] = [b for b in boxes if b['class'] != YOLO_CLASS]
-
     try:
         results = yolo_model(current_image, verbose=False)[0]
         added = 0
         for box in results.boxes:
             x1, y1, x2, y2 = [float(v) for v in box.xyxy[0].tolist()]
-            cls_idx  = int(box.cls)
-            cls_name = results.names[cls_idx]
+            cls_name = results.names[int(box.cls)]
             conf     = float(box.conf)
-            boxes.append({
-                'class':      YOLO_CLASS,
-                'yolo_class': cls_name,
-                'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2,
-                'conf': conf,
-            })
+            # Store as a plain box — class label is the YOLO class name + confidence
+            label = f'{cls_name} {conf:.0%}'
+            boxes.append({'class': label, 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
             added += 1
         redraw()
         update_status()
-        ui.notify(f'YOLO found {added} object(s)', type='positive')
+        ui.notify(f'YOLO added {added} box(es) — edit or delete as needed', type='positive')
     except Exception as ex:
         ui.notify(f'Inference error: {ex}', type='negative')
 
@@ -181,14 +172,12 @@ def save_current_boxes():
         return
     fname = os.path.basename(current_image)
     all_annotations = all_annotations[all_annotations['filename'] != fname]
-    # Only persist manually drawn boxes (skip raw YOLO predictions)
-    manual = [b for b in boxes if b['class'] != YOLO_CLASS]
-    if manual:
+    if boxes:
         new_rows = pd.DataFrame([
             {'filename': fname, 'class': b['class'],
              'x1': round(b['x1']), 'y1': round(b['y1']),
              'x2': round(b['x2']), 'y2': round(b['y2'])}
-            for b in manual
+            for b in boxes
         ])
         all_annotations = pd.concat([all_annotations, new_rows], ignore_index=True)
 
@@ -249,35 +238,26 @@ def export_csv():
 def update_status():
     if current_image is None:
         return
-    fname   = os.path.basename(current_image)
-    manual  = sum(1 for b in boxes if b['class'] != YOLO_CLASS)
-    pred    = sum(1 for b in boxes if b['class'] == YOLO_CLASS)
-    total   = len(all_annotations)
-    parts   = [f'{fname}', f'{manual} manual box(es)']
-    if pred:
-        parts.append(f'{pred} YOLO prediction(s)')
-    parts.append(f'{total} total saved')
-    status_label.set_text('  ·  '.join(parts))
+    fname = os.path.basename(current_image)
+    status_label.set_text(
+        f'{fname}  ·  {len(boxes)} box(es) on this image  ·  {len(all_annotations)} total saved'
+    )
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
 ui.label('Image Annotation Tool').classes('text-xl font-bold mb-2')
 
-# Image directory row
 with ui.row().classes('items-center gap-2 w-full mb-1'):
     dir_input = ui.input(placeholder='Image directory, e.g. /Users/you/images').classes('flex-grow')
     ui.button('Load', icon='folder_open', on_click=load_directory).props('color=primary')
 
-# YOLO model row
 with ui.row().classes('items-center gap-2 w-full mb-2'):
     model_input = ui.input(placeholder='Path to .pt model file, e.g. /Users/you/best.pt').classes('flex-grow')
     ui.button('Load Model', icon='smart_toy', on_click=load_yolo_model).props('color=secondary')
     run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined')
     run_yolo_btn.disable()
 
-# File selector
 file_select = ui.select(options=[], label='Select image', on_change=on_file_select).classes('w-full mb-2')
 
-# Annotation toolbar
 with ui.row().classes('items-center gap-4 mb-2') as annotation_row:
     ui.label('Active Class:').classes('font-semibold')
     class_buttons = {}
@@ -294,7 +274,7 @@ with ui.row().classes('items-center gap-4 mb-2') as annotation_row:
 annotation_row.set_visibility(False)
 
 status_label = ui.label('').classes('text-sm text-gray-500 mb-1')
-ui.label('Drag to draw a box · Click a box to select it · YOLO boxes shown with dashed outlines') \
+ui.label('Drag to draw · Click a box to select it · YOLO boxes shown in green') \
     .classes('text-xs text-gray-400 mb-1')
 
 ii = ui.interactive_image(
