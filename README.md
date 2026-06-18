@@ -1,5 +1,5 @@
 # NematostellaTracking
-Code used to process data and extract insights on video data of various life cycle stages of the starlet sea anemone Nematostella vectensis.
+Code used to process data and extract insights on video data of various life cycle stages of the starlet sea anemone *Nematostella vectensis*.
 
 There are several stages for this data analysis pipeline. To see the dependencies for each of the stages, see the dedicated sections below.
 1. **Video Segmentation and Image Preprocessing**: this involves separating the individual frames of the video, cropping them to only include the portion of interest, and converting to grayscale for ease of memory. (COMPLETED)
@@ -24,7 +24,7 @@ The training of the model and initial creation of functions to extract informati
 - `yaml` for working with YAML files
 
 ## Tracking
-This is currently still being improved. The notebook `tracking.ipynb` can be used to take the detection results from the previous phase and assign IDs to each detected individual. The required packages are listed as follows:
+This is currently still being improved. The notebook `position_tracking/tracking.ipynb` can be used to take the detection results from the previous phase and assign IDs to each detected individual. The required packages are listed as follows:
 - `pandas` and `numpy` for working with dataframes and arrays
 - `scipy.optimize` for linear sum assignment; this is done with a modified Jonker-Volgenant algorithm (see `scipy` documentation, https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.linear_sum_assignment.html).
 
