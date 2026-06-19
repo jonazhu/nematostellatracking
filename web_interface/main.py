@@ -4,10 +4,16 @@ import pandas as pd
 
 # ── Class definitions ──────────────────────────────────────────────────────────
 CLASSES = {
-    'Class A': 'SkyBlue',
-    'Class B': 'Tomato',
+    'Planula': 'SkyBlue',
+    'Polyp': 'Tomato',
 }
-YOLO_COLOR = 'MediumSeaGreen'
+# Palette cycled through for YOLO-predicted classes (one color assigned per class name)
+YOLO_PALETTE = [
+    'MediumSeaGreen', 'Orchid', 'DodgerBlue', 'Orange',
+    'Gold', 'Coral', 'MediumSlateBlue', 'Teal',
+    'HotPink', 'SaddleBrown', 'LimeGreen', 'DarkOrange',
+]
+yolo_class_colors = {}   # populated at runtime: yolo_class_name -> color
 
 # ── State ──────────────────────────────────────────────────────────────────────
 start_x        = None
@@ -17,8 +23,9 @@ current_class  = list(CLASSES.keys())[0]
 current_image  = None
 selected_index = None
 yolo_model     = None
+zoom_level     = 1.0   # display scale; stored box coords are always in natural pixels
 
-all_annotations = pd.DataFrame(columns=['filename', 'class', 'x1', 'y1', 'x2', 'y2'])
+all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2'])
 
 # ── Drawing & selection ────────────────────────────────────────────────────────
 def hit_test(x, y):
@@ -45,19 +52,26 @@ def mouse_handler(e: events.MouseEventArguments):
             boxes.append({'class': current_class, 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
             ui.notify(f'[{current_class}] ({x1:.0f},{y1:.0f}) → ({x2:.0f},{y2:.0f})')
         redraw()
-        update_delete_button()
+        update_selection_controls()
         start_x = start_y = None
 
-def box_color(cls):
-    if cls in CLASSES:
-        return CLASSES[cls]
-    # Any YOLO-predicted class not in CLASSES dict gets the YOLO color
-    return YOLO_COLOR
+def yolo_color_for(raw_class_name):
+    """Return (and lazily assign) a palette color for a YOLO class name."""
+    if raw_class_name not in yolo_class_colors:
+        yolo_class_colors[raw_class_name] = YOLO_PALETTE[len(yolo_class_colors) % len(YOLO_PALETTE)]
+    return yolo_class_colors[raw_class_name]
+
+def box_color(box):
+    """Return the display color for a box dict."""
+    if box['class'] in CLASSES:
+        return CLASSES[box['class']]
+    # YOLO boxes carry the raw class name separately for color lookup
+    return yolo_color_for(box.get('yolo_class', box['class']))
 
 def redraw():
     svg = ''
     for i, box in enumerate(boxes):
-        color  = box_color(box['class'])
+        color  = box_color(box)
         is_sel = (i == selected_index)
         x, y   = box['x1'], box['y1']
         w, h   = box['x2'] - box['x1'], box['y2'] - box['y1']
@@ -71,11 +85,11 @@ def redraw():
             f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
         # Only draw the filled label tag for manual boxes
-        if not is_yolo:
-            svg += (
-                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
-            )
+        # if not is_yolo:
+        #     svg += (
+        #         f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+        #         f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+        #     )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
@@ -85,12 +99,34 @@ def set_class(cls):
     for name, btn in class_buttons.items():
         btn.props('color=primary unelevated' if name == cls else 'color=grey outlined')
 
-def update_delete_button():
+def reassign_class(new_cls):
+    """Change the class of the currently selected box."""
+    if selected_index is None or not new_cls:
+        return
+    box = boxes[selected_index]
+    old_cls = box['class']
+    box['class'] = new_cls
+    # If reassigning to a manual class, drop any YOLO-specific metadata
+    if new_cls in CLASSES:
+        box.pop('yolo_class', None)
+    redraw()
+    ui.notify(f'Box {selected_index + 1}: "{old_cls}" → "{new_cls}"')
+
+def update_selection_controls():
+    """Show/hide and populate the reassign select based on current selection."""
     if selected_index is not None:
+        all_classes = list(CLASSES.keys()) + [
+            cls for cls in yolo_class_colors if cls not in CLASSES
+        ]
+        reassign_select.options = all_classes
+        reassign_select.value = boxes[selected_index]['class']
+        reassign_select.update()
+        selection_row.set_visibility(True)
         delete_btn.props('color=negative')
         delete_btn.set_text(f'Delete Box {selected_index + 1}')
         delete_btn.enable()
     else:
+        selection_row.set_visibility(False)
         delete_btn.props('color=negative outlined')
         delete_btn.set_text('Delete Selected')
         delete_btn.disable()
@@ -102,7 +138,7 @@ def delete_selected():
     boxes.pop(selected_index)
     selected_index = None
     redraw()
-    update_delete_button()
+    update_selection_controls()
     update_status()
 
 def undo_box():
@@ -111,7 +147,7 @@ def undo_box():
         boxes.pop()
         selected_index = None
         redraw()
-        update_delete_button()
+        update_selection_controls()
         ui.notify('Last box removed')
 
 def clear_boxes():
@@ -119,7 +155,7 @@ def clear_boxes():
     boxes.clear()
     selected_index = None
     ii.content = ''
-    update_delete_button()
+    update_selection_controls()
     ui.notify('All boxes cleared')
 
 # ── YOLO inference ─────────────────────────────────────────────────────────────
@@ -180,8 +216,8 @@ def run_yolo():
             cls_name = results.names[int(box.cls)]
             conf     = float(box.conf)
             label    = f'{cls_name} {conf:.0%}'
-            candidates.append({'class': label, 'x1': x1, 'y1': y1,
-                                'x2': x2, 'y2': y2, 'conf': conf})
+            candidates.append({'class': label, 'yolo_class': cls_name,
+                                'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'conf': conf})
         # Remove overlapping duplicates (IoU > 50%)
         kept = deduplicate(candidates, iou_threshold=0.5)
         removed = len(candidates) - len(kept)
@@ -193,6 +229,7 @@ def run_yolo():
         if removed:
             msg += f' — {removed} duplicate(s) removed'
         ui.notify(msg, type='positive')
+        update_legend()
     except Exception as ex:
         ui.notify(f'Inference error: {ex}', type='negative')
 
@@ -206,6 +243,7 @@ def save_current_boxes():
     if boxes:
         new_rows = pd.DataFrame([
             {'filename': fname, 'class': b['class'],
+             'yolo_class': b.get('yolo_class', ''),
              'x1': round(b['x1']), 'y1': round(b['y1']),
              'x2': round(b['x2']), 'y2': round(b['y2'])}
             for b in boxes
@@ -219,11 +257,17 @@ def restore_boxes_for(filename):
     fname = os.path.basename(filename)
     rows = all_annotations[all_annotations['filename'] == fname]
     for _, row in rows.iterrows():
-        boxes.append({
+        box = {
             'class': row['class'],
             'x1': float(row['x1']), 'y1': float(row['y1']),
             'x2': float(row['x2']), 'y2': float(row['y2']),
-        })
+        }
+        yc = row.get('yolo_class', '')
+        if yc:
+            box['yolo_class'] = yc
+            yolo_color_for(yc)   # ensure color is registered in the palette map
+        boxes.append(box)
+    update_legend()
 
 # ── File / directory ───────────────────────────────────────────────────────────
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tiff', '.tif'}
@@ -274,7 +318,7 @@ def switch_to_image(full_path):
     restore_boxes_for(full_path)
     ii.set_source(full_path)
     redraw()
-    update_delete_button()
+    update_selection_controls()
     annotation_row.set_visibility(True)
     update_status()
     update_nav_buttons()
@@ -291,6 +335,43 @@ def export_csv():
     all_annotations.to_csv(out, index=False)
     ui.notify(f'Saved → {out}')
 
+def update_legend():
+    """Rebuild the YOLO class legend in the left panel."""
+    legend_row.clear()
+    if not yolo_class_colors:
+        legend_row.set_visibility(False)
+        return
+    with legend_row:
+        for cls_name, color in yolo_class_colors.items():
+            with ui.row().classes('items-center gap-2'):
+                ui.html(
+                    f'<svg width="14" height="14">'
+                    f'<circle cx="7" cy="7" r="6" fill="{color}"/>'
+                    f'</svg>'
+                )
+                ui.label(cls_name).classes('text-sm')
+    legend_row.set_visibility(True)
+
+ZOOM_STEP = 0.25
+ZOOM_MIN  = 0.25
+ZOOM_MAX  = 4.0
+
+def apply_zoom():
+    """Resize the interactive image element and update the zoom label."""
+    pct = int(zoom_level * 100)
+    ii.style(f'width: {pct}%; max-width: none;')
+    zoom_label.set_text(f'{pct}%')
+
+def zoom_in():
+    global zoom_level
+    zoom_level = min(ZOOM_MAX, round(zoom_level + ZOOM_STEP, 2))
+    apply_zoom()
+
+def zoom_out():
+    global zoom_level
+    zoom_level = max(ZOOM_MIN, round(zoom_level - ZOOM_STEP, 2))
+    apply_zoom()
+
 def update_status():
     if current_image is None:
         return
@@ -300,51 +381,88 @@ def update_status():
     )
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
-ui.label('Image Annotation Tool').classes('text-xl font-bold mb-2')
+ui.label('Nematostella Image Annotation Tool').classes('text-xl font-bold mb-2')
 
-with ui.row().classes('items-center gap-2 w-full mb-1'):
-    dir_input = ui.input(placeholder='Image directory, e.g. /Users/you/images').classes('flex-grow')
-    ui.button('Load', icon='folder_open', on_click=load_directory).props('color=primary')
+with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80px);'):
 
-with ui.row().classes('items-center gap-2 w-full mb-2'):
-    model_input = ui.input(placeholder='Path to .pt model file, e.g. /Users/you/best.pt').classes('flex-grow')
-    ui.button('Load Model', icon='smart_toy', on_click=load_yolo_model).props('color=secondary')
-    run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined')
-    run_yolo_btn.disable()
+    # ── Left panel (30%) ──────────────────────────────────────────────────────
+    with ui.column().classes('gap-3 p-3 border-r').style('width: 30%; min-width: 220px; height: 100%; overflow-y: auto;'):
 
-with ui.row().classes('items-center gap-2 w-full mb-2'):
-    prev_btn = ui.button(icon='chevron_left', on_click=lambda: step_image(-1)).props('outline')
-    file_select = ui.select(options=[], label='Select image', on_change=on_file_select).classes('flex-grow')
-    next_btn = ui.button(icon='chevron_right', on_click=lambda: step_image(1)).props('outline')
-prev_btn.disable()
-next_btn.disable()
+        ui.label('Image Directory').classes('text-sm font-semibold text-gray-500')
+        with ui.row().classes('items-center gap-2 w-full'):
+            dir_input = ui.input(placeholder='/Users/you/images').classes('flex-grow')
+            ui.button(icon='folder_open', on_click=load_directory).props('color=primary dense').tooltip('Load directory')
 
-with ui.row().classes('items-center gap-4 mb-2') as annotation_row:
-    ui.label('Active Class:').classes('font-semibold')
-    class_buttons = {}
-    for cls in CLASSES:
-        btn = ui.button(cls, on_click=lambda c=cls: set_class(c))
-        class_buttons[cls] = btn
-    ui.separator().props('vertical')
-    ui.button('Undo', on_click=undo_box).props('color=warning outlined')
-    delete_btn = ui.button('Delete Selected', on_click=delete_selected).props('color=negative outlined')
-    ui.button('Clear All', on_click=clear_boxes).props('color=negative outlined')
-    ui.separator().props('vertical')
-    ui.button('Export CSV', icon='download', on_click=export_csv).props('color=secondary')
+        ui.separator()
 
-annotation_row.set_visibility(False)
+        ui.label('YOLO Model').classes('text-sm font-semibold text-gray-500')
+        with ui.row().classes('items-center gap-2 w-full'):
+            model_input = ui.input(placeholder='/Users/you/best.pt').classes('flex-grow')
+            ui.button(icon='smart_toy', on_click=load_yolo_model).props('color=secondary dense').tooltip('Load model')
+        run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined w-full')
+        run_yolo_btn.disable()
 
-status_label = ui.label('').classes('text-sm text-gray-500 mb-1')
-ui.label('Drag to draw · Click a box to select it · YOLO boxes shown in green') \
-    .classes('text-xs text-gray-400 mb-1')
+        ui.separator()
 
-ii = ui.interactive_image(
-    '', on_mouse=mouse_handler,
-    events=['mousedown', 'mouseup'],
-    cross='white', sanitize=False,
-)
+        ui.label('YOLO Class Legend').classes('text-sm font-semibold text-gray-500')
+        legend_row = ui.column().classes('gap-1 w-full')
+        legend_row.set_visibility(False)
+
+    # ── Right panel (70%) ─────────────────────────────────────────────────────
+    with ui.column().classes('gap-2 p-3 flex-grow').style('width: 70%; height: 100%; overflow-y: auto;'):
+
+        # File navigation
+        with ui.row().classes('items-center gap-2 w-full'):
+            prev_btn = ui.button(icon='chevron_left', on_click=lambda: step_image(-1)).props('outline')
+            file_select = ui.select(options=[], label='Select image', on_change=on_file_select).classes('flex-grow')
+            next_btn = ui.button(icon='chevron_right', on_click=lambda: step_image(1)).props('outline')
+        prev_btn.disable()
+        next_btn.disable()
+
+        # Annotation toolbar
+        with ui.row().classes('items-center gap-3 flex-wrap') as annotation_row:
+            ui.label('Active Class:').classes('font-semibold')
+            class_buttons = {}
+            for cls in CLASSES:
+                btn = ui.button(cls, on_click=lambda c=cls: set_class(c))
+                class_buttons[cls] = btn
+            ui.separator().props('vertical')
+            ui.button('Undo', on_click=undo_box).props('color=warning outlined')
+            ui.button('Clear All', on_click=clear_boxes).props('color=negative outlined')
+            ui.separator().props('vertical')
+            ui.button('Export CSV', icon='download', on_click=export_csv).props('color=secondary')
+        annotation_row.set_visibility(False)
+
+        # Reassign class row — visible only when a box is selected
+        with ui.row().classes('items-center gap-3') as selection_row:
+            ui.label('Selected box class:').classes('text-sm font-semibold')
+            reassign_select = ui.select(
+                options=list(CLASSES.keys()),
+                label='Reassign to…',
+                on_change=lambda e: reassign_class(e.value),
+            ).classes('w-48')
+            delete_btn = ui.button('Delete Selected', on_click=delete_selected).props('color=negative outlined')
+        selection_row.set_visibility(False)
+
+        status_label = ui.label('').classes('text-sm text-gray-500')
+        ui.label('Drag to draw · Click a box to select it · YOLO box colors shown in legend')             .classes('text-xs text-gray-400')
+
+        # Zoom controls + image
+        with ui.row().classes('items-center gap-2'):
+            ui.button(icon='zoom_out', on_click=zoom_out).props('outline').tooltip('Zoom out')
+            zoom_label = ui.label('100%').classes('text-sm w-12 text-center')
+            ui.button(icon='zoom_in', on_click=zoom_in).props('outline').tooltip('Zoom in')
+
+        with ui.scroll_area().classes('w-full border rounded').style('height: 600px;'):
+            ii = ui.interactive_image(
+                '', on_mouse=mouse_handler,
+                events=['mousedown', 'mouseup'],
+                cross='white', sanitize=False,
+            ).style('width: 100%; max-width: none;')
+
+ui.label("If you encounter errors with this web interface, please email Jonathan Zhu (jzhu@uark.edu)")
 
 set_class(current_class)
-update_delete_button()
+update_selection_controls()
 
-ui.run()
+ui.run(title='Nematostella Image Annotation Tool')

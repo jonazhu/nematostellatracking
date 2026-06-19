@@ -6,6 +6,8 @@ There are several stages for this data analysis pipeline. To see the dependencie
 2. **Object Detection**: done with YOLO26, this involves taking each of the processed images and detecting polyp and planula life cycle stages. The result of this should be a CSV containing relevant position and class information for an entire image stack. (IN PROGRESS)
 3. **Individual Tracking**: done with linear sum assignment, this takes the CSV from the above and reconstructs the path an individual takes, as well as inferring speed, size, and direction using micrometer units. (IN PROGRESS)
 
+Object detection, critically, is not perfect. It can sometimes miss objects or detect extra objects where there is nothing. To circumvent this, this repository features a web-based interface that allows for you to use an existing YOLO model for semi-automated labeling while also being able to correct any mistakes the model makes. 
+
 ## Video Segmentation, Image Preprocessing
 This is done with the notebook `video_analysis/initial_processing.ipynb` using Python 3.9.23. The required packages and dependencies are listed as follows:
 - `opencv`, listed as `cv2` in the notebook, for segmenting videos and doing the bulk of the processing
@@ -31,3 +33,11 @@ This is currently still being improved. The notebook `position_tracking/tracking
 You can also reconstruct paths and make animated GIFs of the object detection results. For these, you will need the following packages:
 - `matplotlib` and `opencv` for making plots
 - `fastgif` for making animated GIFs; this relies on the dependency `framemaker.py` for use in a Jupyter notebook
+
+# Using the Web Interface
+Our web interface was built and tested on Python 3.13.1. To use the web interface, you will need to make a conda environment with the following packages:
+- `nicegui` for the main web interface dependencies
+- `pandas` for dataframe management
+- optionally, `ultralytics` and `pytorch` for if you wish to utilize a pretrained YOLO model for semi-automated analysis.
+
+Once your conda environment is activated, the web interface can be launched with the command `python3 main.py`. You will be prompted with two text fields; one for a directory of your images, and the other for a path to a pretrained YOLO model, which is optional. Once images are loaded, you can label bounding boxes of planula larvae and polyps as you see fit and export the results as a CSV file once finished. 
