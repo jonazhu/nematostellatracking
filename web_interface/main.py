@@ -1,11 +1,21 @@
 from nicegui import events, ui
+import tkinter as tk
+from tkinter import filedialog
+
+# ── Notification wrapper ───────────────────────────────────────────────────────
+notifications_enabled = False   # off by default
+
+def notify(message, type='info'):
+    """Show a notification only if enabled, or if it's a warning/error."""
+    if notifications_enabled or type in ('warning', 'negative'):
+        ui.notify(message, type=type)
 import os
 import pandas as pd
 
 # ── Class definitions ──────────────────────────────────────────────────────────
 CLASSES = {
-    'Planula': 'SkyBlue',
-    'Polyp': 'Tomato',
+    'Class A': 'SkyBlue',
+    'Class B': 'Tomato',
 }
 # Palette cycled through for YOLO-predicted classes (one color assigned per class name)
 YOLO_PALETTE = [
@@ -14,6 +24,34 @@ YOLO_PALETTE = [
     'HotPink', 'SaddleBrown', 'LimeGreen', 'DarkOrange',
 ]
 yolo_class_colors = {}   # populated at runtime: yolo_class_name -> color
+
+# ── Path picker helpers ───────────────────────────────────────────────────────
+def pick_directory():
+    """Open a native OS folder picker and populate the directory input."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    path = filedialog.askdirectory(title='Select image directory')
+    root.destroy()
+    if path:
+        dir_input.value = path
+        dir_input.update()
+        load_directory()
+
+def pick_model_file():
+    """Open a native OS file picker for .pt files and populate the model input."""
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    path = filedialog.askopenfilename(
+        title='Select YOLO model file',
+        filetypes=[('PyTorch model', '*.pt'), ('All files', '*.*')],
+    )
+    root.destroy()
+    if path:
+        model_input.value = path
+        model_input.update()
+        load_yolo_model()
 
 # ── State ──────────────────────────────────────────────────────────────────────
 start_x        = None
@@ -46,11 +84,11 @@ def mouse_handler(e: events.MouseEventArguments):
             hit = hit_test(e.image_x, e.image_y)
             selected_index = hit
             if hit is not None:
-                ui.notify(f'Selected box {hit + 1} ({boxes[hit]["class"]})')
+                notify(f'Selected box {hit + 1} ({boxes[hit]["class"]})')
         else:
             selected_index = None
             boxes.append({'class': current_class, 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2})
-            ui.notify(f'[{current_class}] ({x1:.0f},{y1:.0f}) → ({x2:.0f},{y2:.0f})')
+            notify(f'[{current_class}] ({x1:.0f},{y1:.0f}) → ({x2:.0f},{y2:.0f})')
         redraw()
         update_selection_controls()
         start_x = start_y = None
@@ -85,11 +123,11 @@ def redraw():
             f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
         # Only draw the filled label tag for manual boxes
-        # if not is_yolo:
-        #     svg += (
-        #         f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-        #         f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
-        #     )
+        if not is_yolo:
+            svg += (
+                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+            )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
@@ -110,7 +148,7 @@ def reassign_class(new_cls):
     if new_cls in CLASSES:
         box.pop('yolo_class', None)
     redraw()
-    ui.notify(f'Box {selected_index + 1}: "{old_cls}" → "{new_cls}"')
+    notify(f'Box {selected_index + 1}: "{old_cls}" → "{new_cls}"')
 
 def update_selection_controls():
     """Show/hide and populate the reassign select based on current selection."""
@@ -148,7 +186,7 @@ def undo_box():
         selected_index = None
         redraw()
         update_selection_controls()
-        ui.notify('Last box removed')
+        notify('Last box removed')
 
 def clear_boxes():
     global selected_index
@@ -156,25 +194,25 @@ def clear_boxes():
     selected_index = None
     ii.content = ''
     update_selection_controls()
-    ui.notify('All boxes cleared')
+    notify('All boxes cleared')
 
 # ── YOLO inference ─────────────────────────────────────────────────────────────
 def load_yolo_model():
     global yolo_model
     pt_path = model_input.value.strip()
     if not pt_path:
-        ui.notify('Enter a path to a .pt file first', type='warning')
+        notify('Enter a path to a .pt file first', type='warning')
         return
     if not os.path.isfile(pt_path):
-        ui.notify('File not found', type='negative')
+        notify('File not found', type='negative')
         return
     try:
         from ultralytics import YOLO
         yolo_model = YOLO(pt_path)
-        ui.notify(f'Model loaded: {os.path.basename(pt_path)}', type='positive')
+        notify(f'Model loaded: {os.path.basename(pt_path)}', type='positive')
         run_yolo_btn.enable()
     except Exception as ex:
-        ui.notify(f'Failed to load model: {ex}', type='negative')
+        notify(f'Failed to load model: {ex}', type='negative')
 
 def iou(a, b):
     """Intersection-over-Union for two boxes given as dicts with x1/y1/x2/y2."""
@@ -202,10 +240,10 @@ def deduplicate(candidates, iou_threshold=0.5):
 def run_yolo():
     """Run inference and add predictions as ordinary saveable boxes."""
     if yolo_model is None:
-        ui.notify('Load a model first', type='warning')
+        notify('Load a model first', type='warning')
         return
     if current_image is None:
-        ui.notify('No image loaded', type='warning')
+        notify('No image loaded', type='warning')
         return
     try:
         results = yolo_model(current_image, verbose=False)[0]
@@ -228,10 +266,10 @@ def run_yolo():
         msg = f'YOLO added {len(kept)} box(es)'
         if removed:
             msg += f' — {removed} duplicate(s) removed'
-        ui.notify(msg, type='positive')
+        notify(msg, type='positive')
         update_legend()
     except Exception as ex:
-        ui.notify(f'Inference error: {ex}', type='negative')
+        notify(f'Inference error: {ex}', type='negative')
 
 # ── Persistence ────────────────────────────────────────────────────────────────
 def save_current_boxes():
@@ -249,6 +287,7 @@ def save_current_boxes():
             for b in boxes
         ])
         all_annotations = pd.concat([all_annotations, new_rows], ignore_index=True)
+    autosave_csv()
 
 def restore_boxes_for(filename):
     global selected_index
@@ -269,23 +308,66 @@ def restore_boxes_for(filename):
         boxes.append(box)
     update_legend()
 
+# ── CSV autosave & resume ─────────────────────────────────────────────────────
+def csv_path():
+    """Canonical autosave path inside the current image directory."""
+    return os.path.join(dir_input.value.strip(), 'annotations.csv')
+
+def autosave_csv():
+    """Write all_annotations to disk silently (called on every image switch)."""
+    if all_annotations.empty:
+        return
+    try:
+        all_annotations.to_csv(csv_path(), index=False)
+    except Exception:
+        pass   # Never block navigation due to a save error
+
+def try_resume_from_csv(directory):
+    """If annotations.csv exists in directory, load it into all_annotations."""
+    global all_annotations
+    path = os.path.join(directory, 'annotations.csv')
+    if not os.path.isfile(path):
+        return False
+    try:
+        loaded = pd.read_csv(path)
+        # Ensure yolo_class column exists even in CSVs saved before that column was added
+        if 'yolo_class' not in loaded.columns:
+            loaded['yolo_class'] = ''
+        all_annotations = loaded
+        # Re-register any YOLO class colors so the legend rebuilds correctly
+        for yc in all_annotations['yolo_class'].dropna().unique():
+            if yc:
+                yolo_color_for(yc)
+        return True
+    except Exception as ex:
+        notify(f'Could not load existing annotations: {ex}', type='warning')
+        return False
+
 # ── File / directory ───────────────────────────────────────────────────────────
 IMAGE_EXTS = {'.png', '.jpg', '.jpeg', '.bmp', '.gif', '.webp', '.tiff', '.tif'}
 
 def load_directory():
+    global all_annotations
     path = dir_input.value.strip()
     if not os.path.isdir(path):
-        ui.notify('Directory not found', type='negative')
+        notify('Directory not found', type='negative')
         return
     files = sorted(f for f in os.listdir(path) if os.path.splitext(f)[1].lower() in IMAGE_EXTS)
     if not files:
-        ui.notify('No image files found', type='warning')
+        notify('No image files found', type='warning')
         return
+    # Reset annotations then try to resume from an existing CSV
+    all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2'])
+    resumed = try_resume_from_csv(path)
     file_select.options = files
     file_select.value   = files[0]
     file_select.update()
     switch_to_image(os.path.join(path, files[0]))
-    ui.notify(f'{len(files)} image(s) found')
+    if resumed:
+        n = len(all_annotations)
+        notify(f'{len(files)} image(s) found · Resumed {n} saved annotation(s)', type='positive')
+    else:
+        notify(f'{len(files)} image(s) found · No existing annotations')
     update_nav_buttons()
 
 def on_file_select(e):
@@ -329,11 +411,11 @@ def switch_to_image(full_path):
 def export_csv():
     save_current_boxes()
     if all_annotations.empty:
-        ui.notify('No annotations to export', type='warning')
+        notify('No annotations to export', type='warning')
         return
     out = os.path.join(dir_input.value.strip(), 'annotations.csv')
     all_annotations.to_csv(out, index=False)
-    ui.notify(f'Saved → {out}')
+    notify(f'Saved → {out}')
 
 def update_legend():
     """Rebuild the YOLO class legend in the left panel."""
@@ -381,7 +463,7 @@ def update_status():
     )
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
-ui.label('Nematostella Image Annotation Tool').classes('text-xl font-bold mb-2')
+ui.label('Image Annotation Tool').classes('text-xl font-bold mb-2')
 
 with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80px);'):
 
@@ -391,14 +473,29 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
         ui.label('Image Directory').classes('text-sm font-semibold text-gray-500')
         with ui.row().classes('items-center gap-2 w-full'):
             dir_input = ui.input(placeholder='/Users/you/images').classes('flex-grow')
-            ui.button(icon='folder_open', on_click=load_directory).props('color=primary dense').tooltip('Load directory')
+            ui.button(icon='folder_open', on_click=load_directory).props('color=primary dense').tooltip('Load typed path')
+        ui.button('Browse…', icon='drive_folder_upload', on_click=pick_directory)             .props('color=primary outline w-full').tooltip('Open folder picker')
+
+        def toggle_notifications():
+            global notifications_enabled
+            notifications_enabled = not notifications_enabled
+            notif_btn.props(
+                'color=positive' if notifications_enabled else 'color=grey outlined'
+            )
+            notif_btn.set_text(
+                'Notifications: On' if notifications_enabled else 'Notifications: Off'
+            )
+
+        notif_btn = ui.button('Notifications: Off', icon='notifications_off',
+                              on_click=toggle_notifications)             .props('color=grey outlined w-full')
 
         ui.separator()
 
         ui.label('YOLO Model').classes('text-sm font-semibold text-gray-500')
         with ui.row().classes('items-center gap-2 w-full'):
             model_input = ui.input(placeholder='/Users/you/best.pt').classes('flex-grow')
-            ui.button(icon='smart_toy', on_click=load_yolo_model).props('color=secondary dense').tooltip('Load model')
+            ui.button(icon='smart_toy', on_click=load_yolo_model).props('color=secondary dense').tooltip('Load typed path')
+        ui.button('Browse…', icon='file_open', on_click=pick_model_file)             .props('color=secondary outline w-full').tooltip('Open file picker')
         run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined w-full')
         run_yolo_btn.disable()
 
@@ -460,9 +557,13 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
                 cross='white', sanitize=False,
             ).style('width: 100%; max-width: none;')
 
-ui.label("If you encounter errors with this web interface, please email Jonathan Zhu (jzhu@uark.edu)")
+def handle_key(e):
+    if e.key in ('Delete', 'Backspace') and selected_index is not None:
+        delete_selected()
+
+ui.keyboard(on_key=handle_key, ignore=[])
 
 set_class(current_class)
 update_selection_controls()
 
-ui.run(title='Nematostella Image Annotation Tool')
+ui.run(title='Image Annotation Tool')
