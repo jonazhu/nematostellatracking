@@ -37,7 +37,8 @@ You can also reconstruct paths and make animated GIFs of the object detection re
 # Using the Web Interface
 Our web interface was built and tested on Python 3.13.1. To use the web interface, you will need to make a conda environment with the following packages:
 - `nicegui` for the main web interface dependencies
+- `tkinter` for file selection. Note that you can specify directories and files with a prewritten path, but this package makes selecting a directory in your local machine's file structure easier
 - `pandas` for dataframe management
 - optionally, `ultralytics` and `pytorch` for if you wish to utilize a pretrained YOLO model for semi-automated analysis.
 
-Once your conda environment is activated, the web interface can be launched with the command `python3 main.py`. You will be prompted with two text fields; one for a directory of your images, and the other for a path to a pretrained YOLO model, which is optional. Once images are loaded, you can label bounding boxes of planula larvae and polyps as you see fit and export the results as a CSV file once finished. 
+Once your conda environment is activated, the web interface can be launched with the command `python3 main.py`. You will be prompted with two text fields; one for a directory of your images, and the other for a path to a pretrained YOLO model, which is optional. Once images are loaded, you can label bounding boxes of planula larvae and polyps as you see fit. Note that when working with a directory, intermediary results are often saved in the file `annotations.csv`, which is automatically loaded when you restart the app and work in the same directory. The "Export CSV" button can be used to ensure exporting of a specific state without relying on autosaves.
