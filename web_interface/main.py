@@ -61,9 +61,10 @@ current_class  = list(CLASSES.keys())[0]
 current_image  = None
 selected_index = None
 yolo_model     = None
+conf_threshold = 0.5   # 0.0–1.0; boxes below this confidence are discarded
 zoom_level     = 1.0   # display scale; stored box coords are always in natural pixels
 
-all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2'])
+all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2', 'from_yolo'])
 
 # ── Drawing & selection ────────────────────────────────────────────────────────
 def hit_test(x, y):
@@ -246,6 +247,9 @@ def run_yolo():
         notify('No image loaded', type='warning')
         return
     try:
+        # Remove any boxes that were previously added by YOLO so re-running
+        # at a different confidence threshold doesn't stack duplicates
+        boxes[:] = [b for b in boxes if not b.get('from_yolo')]
         results = yolo_model(current_image, verbose=False)[0]
         # Collect raw predictions
         candidates = []
@@ -256,16 +260,20 @@ def run_yolo():
             label    = f'{cls_name} {conf:.0%}'
             candidates.append({'class': label, 'yolo_class': cls_name,
                                 'x1': x1, 'y1': y1, 'x2': x2, 'y2': y2, 'conf': conf})
+        # Filter by confidence threshold
+        threshold = conf_threshold
+        candidates = [c for c in candidates if c['conf'] >= threshold]
         # Remove overlapping duplicates (IoU > 50%)
+        total_before_dedup = len(candidates)
         kept = deduplicate(candidates, iou_threshold=0.5)
-        removed = len(candidates) - len(kept)
+        removed_dedup = total_before_dedup - len(kept)
         for b in kept:
-            boxes.append({k: v for k, v in b.items() if k != 'conf'})
+            boxes.append({k: v for k, v in b.items() if k != 'conf'} | {'from_yolo': True})
         redraw()
         update_status()
         msg = f'YOLO added {len(kept)} box(es)'
-        if removed:
-            msg += f' — {removed} duplicate(s) removed'
+        if removed_dedup:
+            msg += f' — {removed_dedup} duplicate(s) removed'
         notify(msg, type='positive')
         update_legend()
     except Exception as ex:
@@ -283,7 +291,8 @@ def save_current_boxes():
             {'filename': fname, 'class': b['class'],
              'yolo_class': b.get('yolo_class', ''),
              'x1': round(b['x1']), 'y1': round(b['y1']),
-             'x2': round(b['x2']), 'y2': round(b['y2'])}
+             'x2': round(b['x2']), 'y2': round(b['y2']),
+             'from_yolo': b.get('from_yolo', False)}
             for b in boxes
         ])
         all_annotations = pd.concat([all_annotations, new_rows], ignore_index=True)
@@ -300,6 +309,7 @@ def restore_boxes_for(filename):
             'class': row['class'],
             'x1': float(row['x1']), 'y1': float(row['y1']),
             'x2': float(row['x2']), 'y2': float(row['y2']),
+            'from_yolo': bool(row.get('from_yolo', False)),
         }
         yc = row.get('yolo_class', '')
         if yc:
@@ -333,6 +343,8 @@ def try_resume_from_csv(directory):
         # Ensure yolo_class column exists even in CSVs saved before that column was added
         if 'yolo_class' not in loaded.columns:
             loaded['yolo_class'] = ''
+        if 'from_yolo' not in loaded.columns:
+            loaded['from_yolo'] = False
         all_annotations = loaded
         # Re-register any YOLO class colors so the legend rebuilds correctly
         for yc in all_annotations['yolo_class'].dropna().unique():
@@ -357,7 +369,7 @@ def load_directory():
         notify('No image files found', type='warning')
         return
     # Reset annotations then try to resume from an existing CSV
-    all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2'])
+    all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2', 'from_yolo'])
     resumed = try_resume_from_csv(path)
     file_select.options = files
     file_select.value   = files[0]
@@ -499,6 +511,17 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
         run_yolo_btn = ui.button('Run YOLO', icon='auto_fix_high', on_click=run_yolo).props('color=secondary outlined w-full')
         run_yolo_btn.disable()
 
+        with ui.row().classes('items-center justify-between w-full'):
+            ui.label('Min. confidence').classes('text-sm text-gray-500')
+            conf_label = ui.label('50%').classes('text-sm font-semibold')
+
+        def on_conf_change(e):
+            global conf_threshold
+            conf_threshold = e.value / 100
+            conf_label.set_text(f'{int(e.value)}%')
+
+        ui.slider(min=0, max=100, step=1, value=50, on_change=on_conf_change)             .props('label color=secondary').classes('w-full')
+
         ui.separator()
 
         ui.label('YOLO Class Legend').classes('text-sm font-semibold text-gray-500')
@@ -558,12 +581,32 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
             ).style('width: 100%; max-width: none;')
 
 def handle_key(e):
-    if e.key in ('Delete', 'Backspace') and selected_index is not None:
-        delete_selected()
+    if e.action.repeat:
+        return
+    if e.action.keydown:
+        if e.key in ('Delete', 'Backspace') and selected_index is not None:
+            delete_selected()
+        elif e.key.arrow_left:
+            step_image(-1)
+        elif e.key.arrow_right:
+            step_image(1)
 
 ui.keyboard(on_key=handle_key, ignore=[])
 
 set_class(current_class)
 update_selection_controls()
 
-ui.run(title='Image Annotation Tool')
+def build_favicon(png_path='icon.png', ico_path='icon.ico'):
+    """Convert icon.png to a properly formatted .ico file for use as a favicon."""
+    try:
+        from PIL import Image
+        img = Image.open(png_path).convert('RGBA')
+        # .ico supports multiple sizes; 32x32 and 16x16 are the standard favicon sizes
+        img.save(ico_path, format='ICO', sizes=[(32, 32), (16, 16)])
+        return ico_path
+    except FileNotFoundError:
+        return None   # icon.png not found — fall back to NiceGUI default
+    except Exception:
+        return None   # Pillow not installed or conversion failed — fall back silently
+
+ui.run(title='Image Annotation Tool', favicon=build_favicon())
