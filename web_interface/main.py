@@ -14,8 +14,8 @@ import pandas as pd
 
 # ── Class definitions ──────────────────────────────────────────────────────────
 CLASSES = {
-    'Class A': 'SkyBlue',
-    'Class B': 'Tomato',
+    'Planula': 'SkyBlue',
+    'Polyp': 'Tomato',
 }
 # Palette cycled through for YOLO-predicted classes (one color assigned per class name)
 YOLO_PALETTE = [
@@ -124,11 +124,11 @@ def redraw():
             f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
         # Only draw the filled label tag for manual boxes
-        if not is_yolo:
-            svg += (
-                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
-            )
+        # if not is_yolo:
+        #     svg += (
+        #         f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+        #         f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+        #     )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
@@ -475,7 +475,7 @@ def update_status():
     )
 
 # ── UI ─────────────────────────────────────────────────────────────────────────
-ui.label('Image Annotation Tool').classes('text-xl font-bold mb-2')
+ui.label('Nematostella Image Annotation Tool').classes('text-xl font-bold mb-2')
 
 with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80px);'):
 
@@ -487,19 +487,6 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
             dir_input = ui.input(placeholder='/Users/you/images').classes('flex-grow')
             ui.button(icon='folder_open', on_click=load_directory).props('color=primary dense').tooltip('Load typed path')
         ui.button('Browse…', icon='drive_folder_upload', on_click=pick_directory)             .props('color=primary outline w-full').tooltip('Open folder picker')
-
-        def toggle_notifications():
-            global notifications_enabled
-            notifications_enabled = not notifications_enabled
-            notif_btn.props(
-                'color=positive' if notifications_enabled else 'color=grey outlined'
-            )
-            notif_btn.set_text(
-                'Notifications: On' if notifications_enabled else 'Notifications: Off'
-            )
-
-        notif_btn = ui.button('Notifications: Off', icon='notifications_off',
-                              on_click=toggle_notifications)             .props('color=grey outlined w-full')
 
         ui.separator()
 
@@ -524,9 +511,36 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
 
         ui.separator()
 
+        ui.label('Class Legend').classes('text-sm font-semibold text-gray-500')
+        legend_row_main = ui.column().classes('gap-1 w-full')
+        with legend_row_main:
+            for cls_name, color in CLASSES.items():
+                with ui.row().classes('items-center gap-2'):
+                    ui.html(
+                        f'<svg width="14" height="14">'
+                        f'<circle cx="7" cy="7" r="6" fill="{color}"/>'
+                        f'</svg>'
+                    )
+                    ui.label(cls_name).classes('text-sm')
+
         ui.label('YOLO Class Legend').classes('text-sm font-semibold text-gray-500')
         legend_row = ui.column().classes('gap-1 w-full')
         legend_row.set_visibility(False)
+
+        ui.separator()
+
+        def toggle_notifications():
+            global notifications_enabled
+            notifications_enabled = not notifications_enabled
+            notif_btn.props(
+                'color=positive' if notifications_enabled else 'color=grey outlined'
+            )
+            notif_btn.set_text(
+                'Notifications: On' if notifications_enabled else 'Notifications: Off'
+            )
+
+        notif_btn = ui.button('Notifications: Off', icon='notifications_off',
+                              on_click=toggle_notifications)             .props('color=grey outlined w-full')
 
     # ── Right panel (70%) ─────────────────────────────────────────────────────
     with ui.column().classes('gap-2 p-3 flex-grow').style('width: 70%; height: 100%; overflow-y: auto;'):
@@ -573,12 +587,20 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
             zoom_label = ui.label('100%').classes('text-sm w-12 text-center')
             ui.button(icon='zoom_in', on_click=zoom_in).props('outline').tooltip('Zoom in')
 
-        with ui.scroll_area().classes('w-full border rounded').style('height: 600px;'):
+        with ui.scroll_area().classes('w-full border rounded').style('height: 1000px;'):
             ii = ui.interactive_image(
                 '', on_mouse=mouse_handler,
                 events=['mousedown', 'mouseup'],
                 cross='white', sanitize=False,
             ).style('width: 100%; max-width: none;')
+
+ui.label("Keyboard shortcuts").classes('text font-bold mb-2')
+ui.label("(Delete/Backspace) to delete a selected annotation box")
+ui.label("(Left/Right) to move to previous/next image in the directory")
+
+ui.separator()
+
+ui.label("To report technical issues or bugs please contact Jonathan Zhu (jzhu@uark.edu)")
 
 def handle_key(e):
     if e.action.repeat:
@@ -609,4 +631,4 @@ def build_favicon(png_path='icon.png', ico_path='icon.ico'):
     except Exception:
         return None   # Pillow not installed or conversion failed — fall back silently
 
-ui.run(title='Image Annotation Tool', favicon=build_favicon())
+ui.run(title='Nematostella Annotation', favicon=build_favicon())
