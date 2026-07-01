@@ -1,0 +1,5 @@
+Format: 
+- videoname: pixelheight, pixelwidth
+
+- glw_ac_16C_2_dpf_03_26_2026: 825, 816
+- wt_25c_3_dpf_fert_04_24_2026: 840, 833

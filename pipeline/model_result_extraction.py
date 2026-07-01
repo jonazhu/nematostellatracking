@@ -6,11 +6,13 @@ import numpy as np
 import os
 import sys
 
-ultralytics.checks()
-
 #optional: a lot of warnings come up
 import warnings
 warnings.filterwarnings('ignore')
+
+ultralytics.checks()
+
+#TODO: integrate hyperparameter processing via YAML file
 
 if __name__ == "__main__":
     best_model = sys.argv[1]

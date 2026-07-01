@@ -4,9 +4,15 @@ import matplotlib.pyplot as plt
 from scipy.optimize import linear_sum_assignment
 import os
 import sys
+import yaml
 
 import warnings
 warnings.filterwarnings('ignore')
+
+#TODO: 
+#modify tracking preprocessing of positions (details written on paper - will experiment in notebook first)
+#Integrate further hyperparameter processing
+
 
 #helper functions for making a cost matrix from two dataframes
 def euclidean_distance(x1, y1, x2, y2):
@@ -30,7 +36,9 @@ def cost_matrix(df_first, df_second):
 def assign_ids(df_first, df_second, row_ind, col_ind):
     new_ids = np.full(len(df_second), -1)
 
-    #this routine handles if df_first has the same number of entries as df_second. 
+    #this routine handles if df_first has the same number or fewer entries as df_second. 
+    #In this case, any extra labels are simply discarded at the end of assignment.
+    #Do note that this can still lead to ways in which things can go wrong.
     if len(df_first) <= len(df_second):
         #go through the IDs in the first df
         for i in range(len(df_first)):
@@ -41,6 +49,7 @@ def assign_ids(df_first, df_second, row_ind, col_ind):
         df_second["id"] = new_ids
 
     #case in which df_first has more entries than df_second.
+    #this will attempt to 
     elif len(df_first) > len(df_second):
         ids_first = [id for id in range(len(df_first))]
         used_ids = []
@@ -60,19 +69,20 @@ def assign_ids(df_first, df_second, row_ind, col_ind):
         df_second["image_filename"] = df_second.iloc[0]["image_filename"]
 
     else:
-        print("Something went horribly wrong")
+        print("Something went wrong in assigning IDs")
         assert False
 
 if __name__ == "__main__":
-    base_dir = sys.argv[1]
-    try:
-        labels_file = sys.argv[2]
-    except:
-        labels_file = "annotations.csv"
-    
-    img_folders = os.listdir(base_dir)
+    print("Beginning tracking process.")
 
-    df = pd.read_csv(base_dir + "/" + labels_file)
+    params = yaml.dump(yaml.load(sys.argv[1]))
+    
+    os.chdir(params["image_dir"])
+
+    df = pd.read_csv(params["labels"])
+
+    if params["preprocess"] == True:
+        print("Preprocessing labels from " + params["labels"])
 
     #adding attributes to dataframe based on positions
     df["width"] = df["x2"] - df["x1"]
@@ -90,7 +100,14 @@ if __name__ == "__main__":
     df_individuals[0]["id"] = np.arange(len(df_individuals[0]))
 
     for i in range(len(df_individuals) - 1):
-        #print(i)
+        if len(df_individuals[i]) < len(df_individuals[i+1]):
+            print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
+                  " has more labels than " + df_individuals[i+1].iloc[0]["image_filename"])
+            
+        if len(df_individuals[i]) > len(df_individuals[i+1]):
+            print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
+                  " has fewer labels than " + df_individuals[i+1].iloc[0]["image_filename"])
+
         cm = cost_matrix(df_individuals[i], df_individuals[i+1])
         row_ind, col_ind = linear_sum_assignment(cm)
 

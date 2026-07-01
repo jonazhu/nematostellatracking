@@ -7,6 +7,11 @@ import fastgif
 import warnings
 warnings.filterwarnings('ignore')
 
+#TODO:
+#clean general structure
+#integrate hyperparameter processing
+#add one more type of animated GIF that overlays paths as they are being made - will experiment in notebook first
+
 try:
     df = pd.read_csv(sys.argv[1])
 except:
