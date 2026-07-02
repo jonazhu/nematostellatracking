@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import sys
+import os
+import yaml
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -69,10 +71,23 @@ def get_speed_and_direction(df):
 
 
 if __name__ == "__main__":
-    try:
-        df = pd.read_csv(sys.argv[1])
-    except:
-        df = pd.read_csv("annotations.csv")
+    print("Beginning behavior conversion process.")
+
+    with open(sys.argv[1], "r") as fr:
+        params = yaml.load(fr, yaml.Loader)
+    
+    os.chdir(params["image_dir"])
+
+    df = pd.read_csv(params["tracked_labels"])
+
+    dish_diameter_microns = params["dish_diameter"]
+    dish_height_pixels = params["height_pixels"]
+    dish_width_pixels = params["width_pixels"]
+    time_between_frames = params["time_between_frames"]
+
+    #convert width, height to microns
+    df["height"] = df["height"] * (dish_diameter_microns / dish_height_pixels)
+    df["width"] = df["width"] * (dish_diameter_microns / dish_width_pixels)
 
     ids = df["id"].unique()
     df_individuals = []
@@ -80,17 +95,12 @@ if __name__ == "__main__":
     for i in ids:
         df_individuals.append(df[df.id == i])
 
-    #CONSTANTS FOR EACH IMAGE STACK
-    dish_diameter_microns = 18000 #or 18 mm: this does not change
-    dish_height_pixels = 1004
-    dish_width_pixels = 995
-    time_between_frames = 1/30 #since we have 30 fps
-
     for d in df_individuals:
         get_speed_and_direction(d)
 
     df_new = pd.concat(df_individuals)
     df_new.to_csv("behaviors_full.csv")
+    print("Full behaviors saved to behaviors_full.csv")
 
     distance_changes = []
     for i in ids:
@@ -103,13 +113,9 @@ if __name__ == "__main__":
 
     df_summary = pd.concat([df_new[["id", "width", "height", "direction", "speed"]].groupby("id").mean(),
            df_new[["id", "distance"]].groupby("id").sum()], axis=1)
-    df_summary.columns = ["mean_width_pixels", "mean_height_pixels", "avg_direction_radians", 
+    df_summary.columns = ["mean_width_microns", "mean_height_microns", "avg_direction_radians", 
                         "avg_speed_mps", "total_distance_microns"]
     df_summary["distance_change"] = distance_changes
     df_summary.to_csv("behaviors_summary.csv")
-
-
-
-
-
-
+    
+    print("Behavior summaries saved to behaviors_summary.csv")
