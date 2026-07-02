@@ -75,14 +75,28 @@ def assign_ids(df_first, df_second, row_ind, col_ind):
 if __name__ == "__main__":
     print("Beginning tracking process.")
 
-    params = yaml.dump(yaml.load(sys.argv[1]))
+    with open(sys.argv[1], "r") as fr:
+        params = yaml.load(fr, yaml.Loader)
     
     os.chdir(params["image_dir"])
 
     df = pd.read_csv(params["labels"])
 
-    if params["preprocess"] == True:
-        print("Preprocessing labels from " + params["labels"])
+    #section is run if annotations.csv is from the web interface, where the dataframe has a yolo_class
+    if "yolo_class" in df.columns:
+        df = df.filter(items = ["filename", "class", "x1", "y1", "x2", "y2"])
+        df.columns = ["image_filename", "class", "x1", "y1", "x2", "y2"] #rename for consistency
+        classes = []
+        for i in range(len(df)):
+            if "Polyp" in df.iloc[i]["class"]:
+                classes.append("Polyp")
+            elif "Planula" in df.iloc[i]["class"]:
+                classes.append("Planula")
+            else:
+                print("Warning: Image " + df.iloc[i]["image_filename"] + " has an improperly named label")
+
+        df["class"] = classes
+
 
     #adding attributes to dataframe based on positions
     df["width"] = df["x2"] - df["x1"]
@@ -91,12 +105,19 @@ if __name__ == "__main__":
     df["y_center"] = df["y2"] - 0.5 * df["height"]
 
     filenames = df["image_filename"].unique()
-    filenames = np.sort(filenames) #sorting only the filenames makes this a lot quicker
+    filenames = np.sort(filenames) #sorting only the filenames makes this a lot quicker later
     df_individuals = []
 
     for f in filenames:
         df_individuals.append(df[df.image_filename == f])
 
+    #section is run if you want to preprocess the labels; that is, removing boxes with IoU
+    #greater than the given parameter, and checking distances between things
+    if params["preprocess"] == True:
+        print("Preprocessing labels from " + params["labels"])
+
+
+    #automatically assigns IDs for the first dataframe
     df_individuals[0]["id"] = np.arange(len(df_individuals[0]))
 
     for i in range(len(df_individuals) - 1):
@@ -116,4 +137,5 @@ if __name__ == "__main__":
         df_individuals[i+1] = df_individuals[i+1][df_individuals[i+1].id != -1]
 
     df_full = pd.concat(df_individuals)
+    print("Tracked annotations saved to annotations_tracked.csv")
     df_full.to_csv("annotations_tracked.csv", index = False)

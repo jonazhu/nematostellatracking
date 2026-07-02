@@ -11,6 +11,8 @@ warnings.filterwarnings('ignore')
 #clean general structure
 #integrate hyperparameter processing
 #add one more type of animated GIF that overlays paths as they are being made - will experiment in notebook first
+#integrate legend into scatterplot
+#figure out how to make good plots for speed, distance - all in one or separate histograms for each?
 
 try:
     df = pd.read_csv(sys.argv[1])
