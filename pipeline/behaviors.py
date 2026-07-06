@@ -5,7 +5,6 @@ import os
 import yaml
 
 import warnings
-warnings.filterwarnings('ignore')
 
 def euclidean_distance(x1, y1, x2, y2):
     return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -58,6 +57,9 @@ def get_speed_and_direction(df):
         next_speed = next_dist / time_between_frames
         next_dir = direction_bt_frames(x1, y1, x2, y2)
 
+        if next_dist > tolerance:
+            print("Warning: Distance of " + next_dist + " microns traveled detected between images " + df.iloc[i]["image_filename"] + " and " + df.iloc[i+1]["image_filename"])
+
         dists.append(next_dist)
         speeds.append(next_speed)
         dirs.append(next_dir)
@@ -71,10 +73,14 @@ def get_speed_and_direction(df):
 
 
 if __name__ == "__main__":
+
     print("Beginning behavior conversion process.")
 
     with open(sys.argv[1], "r") as fr:
         params = yaml.load(fr, yaml.Loader)
+
+    if params["show_warnings"] == False:
+        warnings.filterwarnings('ignore')
     
     os.chdir(params["image_dir"])
 
@@ -84,6 +90,7 @@ if __name__ == "__main__":
     dish_height_pixels = params["height_pixels"]
     dish_width_pixels = params["width_pixels"]
     time_between_frames = params["time_between_frames"]
+    tolerance = params["distance_tolerance"] * (dish_diameter_microns / dish_height_pixels)
 
     #convert width, height to microns
     df["height"] = df["height"] * (dish_diameter_microns / dish_height_pixels)
@@ -99,8 +106,8 @@ if __name__ == "__main__":
         get_speed_and_direction(d)
 
     df_new = pd.concat(df_individuals)
-    df_new.to_csv("behaviors_full.csv")
-    print("Full behaviors saved to behaviors_full.csv")
+    df_new.to_csv(params["behaviors"])
+    print("Full behaviors saved to " + params["behaviors"])
 
     distance_changes = []
     for i in ids:
@@ -116,6 +123,6 @@ if __name__ == "__main__":
     df_summary.columns = ["mean_width_microns", "mean_height_microns", "avg_direction_radians", 
                         "avg_speed_mps", "total_distance_microns"]
     df_summary["distance_change"] = distance_changes
-    df_summary.to_csv("behaviors_summary.csv")
+    df_summary.to_csv(params["summary"])
     
-    print("Behavior summaries saved to behaviors_summary.csv")
+    print("Behavior summaries saved to " + params["summary"])

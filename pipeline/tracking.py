@@ -12,7 +12,6 @@ warnings.filterwarnings('ignore')
 #modify tracking preprocessing of positions (details written on paper - will experiment in notebook first)
 #Integrate further hyperparameter processing
 
-
 #helper functions for making a cost matrix from two dataframes
 def euclidean_distance(x1, y1, x2, y2):
     return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
@@ -110,12 +109,6 @@ if __name__ == "__main__":
     for f in filenames:
         df_individuals.append(df[df.image_filename == f])
 
-    #section is run if you want to preprocess the labels; that is, removing boxes with IoU
-    #greater than the given parameter, and checking distances between things
-    if params["preprocess"] == True:
-        print("Preprocessing labels from " + params["labels"])
-
-
     #automatically assigns IDs for the first dataframe
     df_individuals[0]["id"] = np.arange(len(df_individuals[0]))
 
@@ -136,5 +129,5 @@ if __name__ == "__main__":
         df_individuals[i+1] = df_individuals[i+1][df_individuals[i+1].id != -1]
 
     df_full = pd.concat(df_individuals)
-    print("Tracked annotations saved to annotations_tracked.csv")
-    df_full.to_csv("annotations_tracked.csv", index = False)
+    print("Tracked annotations saved to " + params["tracked_labels"])
+    df_full.to_csv(params["tracked_labels"], index = False)

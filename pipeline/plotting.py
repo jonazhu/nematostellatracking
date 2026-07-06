@@ -3,6 +3,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import sys
 import fastgif
+import yaml
+import os
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -14,14 +16,6 @@ warnings.filterwarnings('ignore')
 #integrate legend into scatterplot
 #figure out how to make good plots for speed, distance - all in one or separate histograms for each?
 
-try:
-    df = pd.read_csv(sys.argv[1])
-except:
-    df = pd.read_csv("behaviors_full.csv")
-files = df["image_filename"].unique()
-df_files = []
-for f in files:
-    df_files.append(df[df.image_filename == f])
 
 def get_frame(idx):
     img_current = plt.imread(df_individuals[idx].iloc[0]["image_filename"])
@@ -64,16 +58,29 @@ def get_direction_numbers(df):
     return radii
 
 if __name__ == "__main__":
-    try:
-        df_summary = pd.read_csv(sys.argv[2])
-    except:
-        df_summary = pd.read_csv("behaviors_summary.csv")
+    print("Beginning diagram creation.")
+
+    with open(sys.argv[1], "r") as fr:
+        params = yaml.load(fr, yaml.Loader)
+
+    if params["show_warnings"] == False:
+        warnings.filterwarnings('ignore')
+    
+    os.chdir(params["image_dir"])
+
+    df = pd.read_csv(params["tracked_labels"])
+    files = df["image_filename"].unique()
+    df_files = []
+    for f in files:
+        df_files.append(df[df.image_filename == f])
 
     ids = df["id"].unique()
     df_individuals = []
 
     for i in ids:
         df_individuals.append(df[df.id == i])
+
+    df_summary = pd.read_csv(params["summary"])
 
     for d in df_individuals:
         N = 8
