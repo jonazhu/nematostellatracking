@@ -2,9 +2,10 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import sys
-import fastgif
 import yaml
 import os
+import io
+from PIL import Image, ImageDraw
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -16,9 +17,8 @@ warnings.filterwarnings('ignore')
 #integrate legend into scatterplot
 #figure out how to make good plots for speed, distance - all in one or separate histograms for each?
 
-
-def get_frame(idx):
-    img_current = plt.imread(df_individuals[idx].iloc[0]["image_filename"])
+def get_frame_old(idx, df_files):
+    img_current = plt.imread(df_files[idx].iloc[0]["image_filename"])
     fig, ax = plt.subplots()
     ax.imshow(img_current, cmap="gray")
     for i in range(len(df_files[idx])):
@@ -32,7 +32,26 @@ def get_frame(idx):
             rect = plt.Rectangle((x, y), w, h, edgecolor='b', facecolor='none')
         ax.add_patch(rect)
 
-    return fig
+    buf = io.BytesIO()
+    fig.savefig(buf)
+    buf.seek(0)
+    return Image.open(buf)
+
+def get_frame(idx, df_files):
+    img_current = Image.open(df_files[idx].iloc[0]["image_filename"])
+    img_current = img_current.convert('RGB')
+    draw = ImageDraw.Draw(img_current)
+    for i in range(len(df_files[idx])):
+        x1 = df_files[idx].iloc[i]["x1"]
+        y1 = df_files[idx].iloc[i]["y1"]
+        x2 = df_files[idx].iloc[i]["x2"]
+        y2 = df_files[idx].iloc[i]["y2"]
+        if df_files[idx].iloc[i]["class"] == 0.0 or df_files[idx].iloc[i]["class"] == "Planula":
+            draw.rectangle((x1, y1, x2, y2), outline="blue")
+        else: 
+            draw.rectangle((x1, y1, x2, y2), outline="red")
+
+    return img_current
 
 def get_direction_numbers(df):
     radii = np.zeros(8)
@@ -65,10 +84,11 @@ if __name__ == "__main__":
 
     if params["show_warnings"] == False:
         warnings.filterwarnings('ignore')
-    
+            
     os.chdir(params["image_dir"])
 
     df = pd.read_csv(params["tracked_labels"])
+
     files = df["image_filename"].unique()
     df_files = []
     for f in files:
@@ -76,36 +96,40 @@ if __name__ == "__main__":
 
     ids = df["id"].unique()
     df_individuals = []
-
     for i in ids:
         df_individuals.append(df[df.id == i])
 
-    df_summary = pd.read_csv(params["summary"])
+    print("Creating animated GIF of tracked positions.")
 
-    for d in df_individuals:
-        N = 8
-        theta = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
-        radii = get_direction_numbers(d)
-        width = np.pi / 4 * np.ones(8)
+    frames = []
+    for i in range(len(df_files)):
+        frames.append(get_frame(i, df_files))
 
-        colors = plt.colormaps["viridis"](radii / 10.)
+    frames[0].save('positions_tracked.gif',
+               save_all=True, append_images=frames[1:], optimize=False, duration=40, loop=0)
+    print("Tracked positions GIF saved to positions_tracked.gif")
 
-        ax = plt.subplot(projection='polar')
-        ax.bar(theta, radii, width=width, bottom=0.0, alpha=0.5)
+    # for d in df_individuals:
+    #     N = 8
+    #     theta = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
+    #     radii = get_direction_numbers(d)
+    #     width = np.pi / 4 * np.ones(8)
 
-        plt.imsave(d.iloc[0]["id"] + "_directions.png")
+    #     colors = plt.colormaps["viridis"](radii / 10.)
 
-    for i in ids:
-        random_color = np.random.rand(3)
-        plt.plot(df_individuals[i].x_center, df_individuals[i].y_center, color=random_color)
-    plt.legend(ids, fontsize='x-small', loc='upper right', ncols=2)
-    plt.imsave("paths.png")
+    #     ax = plt.subplot(projection='polar')
+    #     ax.bar(theta, radii, width=width, bottom=0.0, alpha=0.5)
 
-    plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"])
-    plt.imsave("total_distance_vs_change.png")
+    #     plt.imsave(d.iloc[0]["id"] + "_directions.png")
 
-    fastgif.make_gif(get_frame, 1799, 'tracked_positions.gif', show_progress=True, writer_kwargs={'duration': 0.01})
+    # for i in ids:
+    #     random_color = np.random.rand(3)
+    #     plt.plot(df_individuals[i].x_center, df_individuals[i].y_center, color=random_color)
+    # plt.legend(ids, fontsize='x-small', loc='upper right', ncols=2)
+    # plt.imsave("paths.png")
 
+    # plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"])
+    # plt.imsave("total_distance_vs_change.png")
 
+    # fastgif.make_gif(get_frame, 1799, 'tracked_positions.gif', show_progress=True, writer_kwargs={'duration': 0.01})
 
-    
