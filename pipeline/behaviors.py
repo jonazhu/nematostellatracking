@@ -6,6 +6,8 @@ import yaml
 
 import warnings
 
+from tqdm import tqdm
+
 def euclidean_distance(x1, y1, x2, y2):
     return np.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
@@ -102,7 +104,7 @@ if __name__ == "__main__":
     for i in ids:
         df_individuals.append(df[df.id == i])
 
-    for d in df_individuals:
+    for d in tqdm(df_individuals):
         get_speed_and_direction(d)
 
     df_new = pd.concat(df_individuals)

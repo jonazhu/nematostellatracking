@@ -1,9 +1,11 @@
 import pandas as pd
 import numpy as np
-from scipy.optimize import linear_sum_assignment
 import os
 import sys
 import yaml
+
+from scipy.optimize import linear_sum_assignment
+from tqdm import tqdm
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -82,10 +84,11 @@ if __name__ == "__main__":
 
     #section is run if annotations.csv is from the web interface, where the dataframe has a yolo_class
     if "yolo_class" in df.columns:
+        print("YOLO assisted columns detected. Renaming some columns and items.")
         df = df.filter(items = ["filename", "class", "x1", "y1", "x2", "y2"])
         df.columns = ["image_filename", "class", "x1", "y1", "x2", "y2"] #rename for consistency
         classes = []
-        for i in range(len(df)):
+        for i in tqdm(range(len(df))):
             if "Polyp" in df.iloc[i]["class"]:
                 classes.append("Polyp")
             elif "Planula" in df.iloc[i]["class"]:
@@ -112,7 +115,9 @@ if __name__ == "__main__":
     #automatically assigns IDs for the first dataframe
     df_individuals[0]["id"] = np.arange(len(df_individuals[0]))
 
-    for i in range(len(df_individuals) - 1):
+    print("Initial calculations completed. Computing actual tracking (this may take a while...)")
+
+    for i in tqdm(range(len(df_individuals) - 1)):
         if len(df_individuals[i]) < len(df_individuals[i+1]):
             print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
                   " has more labels than " + df_individuals[i+1].iloc[0]["image_filename"])
@@ -129,5 +134,5 @@ if __name__ == "__main__":
         df_individuals[i+1] = df_individuals[i+1][df_individuals[i+1].id != -1]
 
     df_full = pd.concat(df_individuals)
-    print("Tracked annotations saved to " + params["tracked_labels"])
     df_full.to_csv(params["tracked_labels"], index = False)
+    print("Tracked annotations saved to " + params["tracked_labels"])

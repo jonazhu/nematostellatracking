@@ -6,6 +6,7 @@ import yaml
 import warnings
 
 from PIL import Image
+from tqdm import tqdm
 
 def get_image_size(filename, size_cache):
     if filename in size_cache:
@@ -56,13 +57,13 @@ if __name__ == "__main__":
     n_boxes = 0
     n_skipped_images = 0
 
-    for i in range(len(df_files)):
+    for i in tqdm(range(len(df_files))):
         filename = df_files[i].iloc[0]["image_filename"]
 
         try:
             img_w, img_h = get_image_size(filename, size_cache)
         except FileNotFoundError as e:
-            print(f"WARNING: {e} -- skipping this image's labels", file=sys.stderr)
+            print("WARNING: " + filename + " has no corresponding image found")
             n_skipped_images += 1
             continue
 
@@ -106,6 +107,6 @@ if __name__ == "__main__":
 
         n_images += 1
 
-    print(f"Done. Wrote labels for {n_images} images ({n_boxes} boxes total).")
+    print("Labels saved to folder \"labels\"")
     if n_skipped_images:
-        print(f"Skipped {n_skipped_images} image(s) due to missing files (see warnings above).")
+        print("Skipped " + n_skipped_images + " image(s) due to missing files.")

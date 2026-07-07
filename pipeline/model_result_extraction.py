@@ -8,6 +8,8 @@ import yaml
 
 import warnings
 
+from tqdm import tqdm
+
 ultralytics.checks()
 
 #TODO: integrate hyperparameter processing via YAML file
@@ -33,7 +35,7 @@ if __name__ == "__main__":
 
     df_full = pd.DataFrame() #the dataframe that contains everything from this stack
 
-    for img in images_list:
+    for img in tqdm(images_list):
         results = best_model(img, verbose=False)
         for r in results:
             b = r.boxes.data  # Boxes object for bounding box outputs

@@ -5,7 +5,9 @@ import sys
 import yaml
 import os
 import io
+
 from PIL import Image, ImageDraw
+from tqdm import tqdm
 
 import warnings
 warnings.filterwarnings('ignore')
@@ -47,11 +49,51 @@ def get_frame(idx, df_files):
         x2 = df_files[idx].iloc[i]["x2"]
         y2 = df_files[idx].iloc[i]["y2"]
         if df_files[idx].iloc[i]["class"] == 0.0 or df_files[idx].iloc[i]["class"] == "Planula":
-            draw.rectangle((x1, y1, x2, y2), outline="blue")
+            draw.rectangle((x1, y1, x2, y2), outline="blue", width=3)
         else: 
-            draw.rectangle((x1, y1, x2, y2), outline="red")
+            draw.rectangle((x1, y1, x2, y2), outline="red", width=3)
 
     return img_current
+
+def get_path_frame(idx, df_files, foreground=None):
+    #define xkcd color pallette to identify individuals
+    colors = ["#6e750e", "#650021", "#01ff07", "#35063e", "#ae7181", "#06470c", 	
+            "#13eac9", "#00ffff", "#d1b26f", "#00035b", "#c79fef", "#06c2ac", 
+            "#033500", "#9a0eea", "#bf77f6", "#89fe05", "#75bbfd",
+            "#ffff14", "#c20078", "#96f97b", "#f97306", "#029386", "#95d0fc",
+            "#e50000", "#653700", "#ff81c0", "#0343df", "#15b01a", "#7e1e9c"]
+    colors = colors[::-1] #reverse it so common colors are at the front
+
+    background = Image.open(df_files[idx].iloc[0]["image_filename"]).convert('RGBA')
+    w, h = background.size
+    fg = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+
+    if foreground == None:
+        draw = ImageDraw.Draw(fg)
+        for i in range(idx + 1): #iterate over all past file dataframes
+            for j in range(len(df_files[i])): #iterate over everything in the current dataframe
+                x = df_files[i].iloc[j]["x_center"]
+                y = df_files[i].iloc[j]["y_center"]
+                id = df_files[i].iloc[j]["id"]
+
+                draw.circle((x, y), radius=2, outline = colors[id], fill=colors[id])
+
+        background.paste(fg, (0, 0), fg)
+        return background, fg
+
+    else:
+        draw = ImageDraw.Draw(foreground)
+        for i in range(len(df_files[idx])):
+            x = df_files[idx].iloc[i]["x_center"]
+            y = df_files[idx].iloc[i]["y_center"]
+            id = df_files[idx].iloc[i]["id"]
+
+            draw.circle((x, y), radius=2, outline = colors[id], fill=colors[id])
+
+        background.paste(foreground, (0, 0), foreground)
+        return background, foreground
+
+    print("If you got here something went horribly wrong.")
 
 def get_direction_numbers(df):
     radii = np.zeros(8)
@@ -102,12 +144,25 @@ if __name__ == "__main__":
     print("Creating animated GIF of tracked positions.")
 
     frames = []
-    for i in range(len(df_files)):
+    for i in tqdm(range(len(df_files))):
         frames.append(get_frame(i, df_files))
 
+    print("Saving tracked positions GIF (this may take a while...)")
     frames[0].save('positions_tracked.gif',
                save_all=True, append_images=frames[1:], optimize=False, duration=40, loop=0)
     print("Tracked positions GIF saved to positions_tracked.gif")
+
+    print("Creating animated GIF of paths taken.")
+    frames = []
+    fg = None
+    for i in tqdm(range(len(df_files))):
+        img, fg = get_path_frame(i, df_files, fg)
+        frames.append(img)
+
+    print("Saving paths taken GIF (this may take a while...)")
+    frames[0].save('paths.gif',
+               save_all=True, append_images=frames[1:], optimize=False, duration=40, loop=0)
+    print("Paths taken GIF saved to paths.gif")
 
     # for d in df_individuals:
     #     N = 8
@@ -130,6 +185,4 @@ if __name__ == "__main__":
 
     # plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"])
     # plt.imsave("total_distance_vs_change.png")
-
-    # fastgif.make_gif(get_frame, 1799, 'tracked_positions.gif', show_progress=True, writer_kwargs={'duration': 0.01})
 
