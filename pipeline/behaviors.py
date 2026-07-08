@@ -60,7 +60,7 @@ def get_speed_and_direction(df):
         next_dir = direction_bt_frames(x1, y1, x2, y2)
 
         if next_dist > tolerance:
-            print("Warning: Distance of " + next_dist + " microns traveled detected between images " + df.iloc[i]["image_filename"] + " and " + df.iloc[i+1]["image_filename"])
+            print("Warning: Distance of " + str(next_dist) + " microns traveled detected between images " + df.iloc[i]["image_filename"] + " and " + df.iloc[i+1]["image_filename"])
 
         dists.append(next_dist)
         speeds.append(next_speed)
