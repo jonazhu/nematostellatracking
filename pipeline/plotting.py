@@ -14,30 +14,16 @@ warnings.filterwarnings('ignore')
 
 #TODO:
 #clean general structure
-#integrate hyperparameter processing
-#add one more type of animated GIF that overlays paths as they are being made - will experiment in notebook first
-#integrate legend into scatterplot
 #figure out how to make good plots for speed, distance - all in one or separate histograms for each?
 
-def get_frame_old(idx, df_files):
-    img_current = plt.imread(df_files[idx].iloc[0]["image_filename"])
-    fig, ax = plt.subplots()
-    ax.imshow(img_current, cmap="gray")
-    for i in range(len(df_files[idx])):
-        w = df_files[idx].iloc[i]["x2"] - df_files[idx].iloc[i]["x1"]
-        h = df_files[idx].iloc[i]["y2"] - df_files[idx].iloc[i]["y1"]
-        x = df_files[idx].iloc[i]["x2"] - w
-        y = df_files[idx].iloc[i]["y2"] - h
-        if df_files[idx].iloc[i]["class"] == 0.0:
-            rect = plt.Rectangle((x, y), w, h, edgecolor='r', facecolor='none')
-        else: 
-            rect = plt.Rectangle((x, y), w, h, edgecolor='b', facecolor='none')
-        ax.add_patch(rect)
-
-    buf = io.BytesIO()
-    fig.savefig(buf)
-    buf.seek(0)
-    return Image.open(buf)
+def xkcd_pallete():
+    #define xkcd color pallette to identify individuals
+    colors = ["#6e750e", "#650021", "#01ff07", "#35063e", "#ae7181", "#06470c", 	
+            "#13eac9", "#00ffff", "#d1b26f", "#00035b", "#c79fef", "#06c2ac", 
+            "#033500", "#9a0eea", "#bf77f6", "#89fe05", "#75bbfd",
+            "#ffff14", "#c20078", "#96f97b", "#f97306", "#029386", "#95d0fc",
+            "#e50000", "#653700", "#ff81c0", "#0343df", "#15b01a", "#7e1e9c"]
+    return colors[::-1] #reverse it so common colors are at the front
 
 def get_frame(idx, df_files):
     img_current = Image.open(df_files[idx].iloc[0]["image_filename"])
@@ -57,12 +43,7 @@ def get_frame(idx, df_files):
 
 def get_path_frame(idx, df_files, foreground=None):
     #define xkcd color pallette to identify individuals
-    colors = ["#6e750e", "#650021", "#01ff07", "#35063e", "#ae7181", "#06470c", 	
-            "#13eac9", "#00ffff", "#d1b26f", "#00035b", "#c79fef", "#06c2ac", 
-            "#033500", "#9a0eea", "#bf77f6", "#89fe05", "#75bbfd",
-            "#ffff14", "#c20078", "#96f97b", "#f97306", "#029386", "#95d0fc",
-            "#e50000", "#653700", "#ff81c0", "#0343df", "#15b01a", "#7e1e9c"]
-    colors = colors[::-1] #reverse it so common colors are at the front
+    colors = xkcd_pallete()
 
     background = Image.open(df_files[idx].iloc[0]["image_filename"]).convert('RGBA')
     w, h = background.size
@@ -129,7 +110,7 @@ if __name__ == "__main__":
             
     os.chdir(params["image_dir"])
 
-    df = pd.read_csv(params["tracked_labels"])
+    df = pd.read_csv(params["behaviors"])
 
     files = df["image_filename"].unique()
     df_files = []
@@ -164,25 +145,48 @@ if __name__ == "__main__":
                save_all=True, append_images=frames[1:], optimize=False, duration=40, loop=0)
     print("Paths taken GIF saved to paths.gif")
 
-    # for d in df_individuals:
-    #     N = 8
-    #     theta = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
-    #     radii = get_direction_numbers(d)
-    #     width = np.pi / 4 * np.ones(8)
+    print("Creating statistical diagrams.")
 
-    #     colors = plt.colormaps["viridis"](radii / 10.)
+    try:
+        os.mkdir("plots")
+    except:
+        print("Warning: Folder for plots already exists. Some diagrams may be overwritten.")
 
-    #     ax = plt.subplot(projection='polar')
-    #     ax.bar(theta, radii, width=width, bottom=0.0, alpha=0.5)
+    print("Creating direction radial histograms.")
 
-    #     plt.imsave(d.iloc[0]["id"] + "_directions.png")
+    #define xkcd color pallette to identify individuals
+    colors = xkcd_pallete() 
 
-    # for i in ids:
-    #     random_color = np.random.rand(3)
-    #     plt.plot(df_individuals[i].x_center, df_individuals[i].y_center, color=random_color)
-    # plt.legend(ids, fontsize='x-small', loc='upper right', ncols=2)
-    # plt.imsave("paths.png")
+    for d in tqdm(df_individuals):
+        N = 8
+        theta = np.linspace(0.0, 2 * np.pi, N, endpoint=False)
+        radii = get_direction_numbers(d)
+        width = np.pi / 4 * np.ones(8)
 
-    # plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"])
-    # plt.imsave("total_distance_vs_change.png")
+        ax = plt.subplot(projection='polar')
+        ax.bar(theta, radii, width=width, bottom=0.0, alpha=0.5, color=colors)
 
+        plt.savefig("plots/directions_ind" + str(d.iloc[0]["id"]) + ".png")
+        plt.close('all')
+
+    print("Creating path diagram.")
+    for i in ids:
+        plt.plot(df_individuals[i].x_center, df_individuals[i].y_center, color=colors[i])
+    plt.legend(ids, fontsize='x-small', loc='upper right', ncols=2)
+    plt.xlabel("X position (pixels)")
+    plt.ylabel("Y position (pixels)")
+    plt.savefig("plots/paths.png")
+    plt.close('all')
+
+    print("Creating distance scatterplot.")
+
+    df_summary = pd.read_csv(params["summary"])
+
+    #plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"], c = df_summary["id"], color = colors)
+    for i in ids:
+        plt.scatter(df_summary.iloc[i]["total_distance_microns"], df_summary.iloc[i]["distance_change"], color=colors[i])
+    plt.legend(ids, fontsize='x-small', loc='upper left', ncols=2)
+    plt.xlabel("Total distance traveled (microns)")
+    plt.ylabel("Change in distance from start to end (microns)")
+    plt.savefig("plots/total_distance_vs_change.png")
+    plt.close('all')
