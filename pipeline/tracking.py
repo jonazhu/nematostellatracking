@@ -117,14 +117,14 @@ if __name__ == "__main__":
 
     print("Initial calculations completed. Computing actual tracking (this may take a while...)")
 
-    df_tracked = [df_individuals[0]]
+    df_lens = [len(d) for d in df_individuals]
 
     for i in tqdm(range(len(df_individuals) - 1)):
-        if len(df_individuals[i]) < len(df_individuals[i+1]):
+        if df_lens[i] < df_lens[i+1]:
             print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
                   " has fewer labels than " + df_individuals[i+1].iloc[0]["image_filename"])
             
-        if len(df_individuals[i]) > len(df_individuals[i+1]):
+        if df_lens[i] < df_lens[i+1]:
             print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
                   " has more labels than " + df_individuals[i+1].iloc[0]["image_filename"])
 
@@ -132,8 +132,8 @@ if __name__ == "__main__":
         row_ind, col_ind = linear_sum_assignment(cm)
 
         assign_ids(df_individuals[i], df_individuals[i+1], row_ind, col_ind)
-        df_tracked.append(df_individuals[i+1][df_individuals[i+1].id != -1])
+        df_individuals[i+1] = df_individuals[i+1][df_individuals[i+1].id != -1]
 
-    df_full = pd.concat(df_tracked)
+    df_full = pd.concat(df_individuals)
     df_full.to_csv(params["tracked_labels"], index = False)
     print("Tracked annotations saved to " + params["tracked_labels"])
