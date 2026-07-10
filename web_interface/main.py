@@ -62,6 +62,9 @@ current_image  = None
 selected_index = None
 yolo_model     = None
 conf_threshold = 0.5   # 0.0–1.0; boxes below this confidence are discarded
+deleted_yolo_boxes = []  # YOLO boxes the user explicitly deleted; used to suppress similar future predictions
+suppression_enabled = True   # toggle for the suppression filter
+remembered_boxes = []  # manual boxes to auto-add on future images if no overlapping YOLO prediction exists
 zoom_level     = 1.0   # display scale; stored box coords are always in natural pixels
 
 all_annotations = pd.DataFrame(columns=['filename', 'class', 'yolo_class', 'x1', 'y1', 'x2', 'y2', 'from_yolo'])
@@ -124,11 +127,11 @@ def redraw():
             f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
         # Only draw the filled label tag for manual boxes
-        # if not is_yolo:
-        #     svg += (
-        #         f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-        #         f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
-        #     )
+        if not is_yolo:
+            svg += (
+                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+            )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
@@ -151,30 +154,57 @@ def reassign_class(new_cls):
     redraw()
     notify(f'Box {selected_index + 1}: "{old_cls}" → "{new_cls}"')
 
+def remember_selected():
+    """Store the selected manual box as a template to auto-add on future images."""
+    if selected_index is None:
+        return
+    box = boxes[selected_index]
+    if box.get('from_yolo'):
+        notify('Only manual boxes can be remembered', type='warning')
+        return
+    entry = {k: box[k] for k in ('class', 'x1', 'y1', 'x2', 'y2')}
+    # Avoid storing duplicates
+    if not any(iou(entry, r) > 0.5 and entry['class'] == r['class'] for r in remembered_boxes):
+        remembered_boxes.append(entry)
+        notify(f'Box remembered ({entry["class"]}) — will auto-add on future images if missing')
+    else:
+        notify('A similar box is already remembered', type='warning')
+
 def update_selection_controls():
     """Show/hide and populate the reassign select based on current selection."""
     if selected_index is not None:
+        box = boxes[selected_index]
+        is_manual = not box.get('from_yolo')
         all_classes = list(CLASSES.keys()) + [
             cls for cls in yolo_class_colors if cls not in CLASSES
         ]
         reassign_select.options = all_classes
-        reassign_select.value = boxes[selected_index]['class']
+        reassign_select.value = box['class']
         reassign_select.update()
         selection_row.set_visibility(True)
         delete_btn.props('color=negative')
         delete_btn.set_text(f'Delete Box {selected_index + 1}')
         delete_btn.enable()
+        # Show remember button only for manual boxes
+        remember_btn.set_visibility(is_manual)
     else:
         selection_row.set_visibility(False)
         delete_btn.props('color=negative outlined')
         delete_btn.set_text('Delete Selected')
         delete_btn.disable()
+        remember_btn.set_visibility(False)
 
 def delete_selected():
     global selected_index
     if selected_index is None:
         return
-    boxes.pop(selected_index)
+    removed = boxes.pop(selected_index)
+    # Remember deleted YOLO boxes so future predictions in the same area are suppressed
+    if removed.get('from_yolo'):
+        deleted_yolo_boxes.append({
+            'x1': removed['x1'], 'y1': removed['y1'],
+            'x2': removed['x2'], 'y2': removed['y2'],
+        })
     selected_index = None
     redraw()
     update_selection_controls()
@@ -263,17 +293,38 @@ def run_yolo():
         # Filter by confidence threshold
         threshold = conf_threshold
         candidates = [c for c in candidates if c['conf'] >= threshold]
+        # Suppress predictions that overlap with a previously deleted YOLO box
+        before_suppress = len(candidates)
+        if suppression_enabled and deleted_yolo_boxes:
+            candidates = [
+                c for c in candidates
+                if all(iou(c, d) <= 0.5 for d in deleted_yolo_boxes)
+            ]
+        removed_suppressed = before_suppress - len(candidates)
         # Remove overlapping duplicates (IoU > 50%)
         total_before_dedup = len(candidates)
         kept = deduplicate(candidates, iou_threshold=0.5)
         removed_dedup = total_before_dedup - len(kept)
         for b in kept:
             boxes.append({k: v for k, v in b.items() if k != 'conf'} | {'from_yolo': True})
+        # Auto-add remembered manual boxes that have no overlapping YOLO prediction
+        auto_added = 0
+        all_yolo_boxes = [b for b in boxes if b.get('from_yolo')]
+        for template in remembered_boxes:
+            has_overlap = any(iou(template, y) > 0.5 for y in all_yolo_boxes)
+            already_present = any(iou(template, b) > 0.5 for b in boxes if not b.get('from_yolo'))
+            if not has_overlap and not already_present:
+                boxes.append({**template, 'from_yolo': False})
+                auto_added += 1
         redraw()
         update_status()
         msg = f'YOLO added {len(kept)} box(es)'
         if removed_dedup:
             msg += f' — {removed_dedup} duplicate(s) removed'
+        if removed_suppressed:
+            msg += f' — {removed_suppressed} suppressed from deletion history'
+        if auto_added:
+            msg += f' — {auto_added} remembered box(es) auto-added'
         notify(msg, type='positive')
         update_legend()
     except Exception as ex:
@@ -568,15 +619,18 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
         annotation_row.set_visibility(False)
 
         # Reassign class row — visible only when a box is selected
-        with ui.row().classes('items-center gap-3') as selection_row:
+        with ui.row().classes('items-center gap-3 flex-wrap') as selection_row:
             ui.label('Selected box class:').classes('text-sm font-semibold')
             reassign_select = ui.select(
                 options=list(CLASSES.keys()),
                 label='Reassign to…',
                 on_change=lambda e: reassign_class(e.value),
             ).classes('w-48')
+            remember_btn = ui.button('Remember Box', icon='bookmark',
+                                     on_click=remember_selected).props('color=teal outlined')
             delete_btn = ui.button('Delete Selected', on_click=delete_selected).props('color=negative outlined')
         selection_row.set_visibility(False)
+        remember_btn.set_visibility(False)
 
         status_label = ui.label('').classes('text-sm text-gray-500')
         ui.label('Drag to draw · Click a box to select it · YOLO box colors shown in legend')             .classes('text-xs text-gray-400')
@@ -587,7 +641,7 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
             zoom_label = ui.label('100%').classes('text-sm w-12 text-center')
             ui.button(icon='zoom_in', on_click=zoom_in).props('outline').tooltip('Zoom in')
 
-        with ui.scroll_area().classes('w-full border rounded').style('height: 1000px;'):
+        with ui.scroll_area().classes('w-full border rounded').style('height: 600px;'):
             ii = ui.interactive_image(
                 '', on_mouse=mouse_handler,
                 events=['mousedown', 'mouseup'],
@@ -597,6 +651,31 @@ with ui.row().classes('w-full gap-0 items-start').style('height: calc(100vh - 80
 ui.label("Keyboard shortcuts").classes('text font-bold mb-2')
 ui.label("(Delete/Backspace) to delete a selected annotation box")
 ui.label("(Left/Right) to move to previous/next image in the directory")
+
+def clear_suppression():
+    deleted_yolo_boxes.clear()
+    notify('Deletion history cleared', type='positive')
+
+with ui.row().classes('items-center justify-left w-full'):
+    ui.label('Suppression filter').classes('text-sm text-gray-500')
+    def toggle_suppression(e):
+        global suppression_enabled
+        suppression_enabled = e.value
+
+    ui.switch(value=True, on_change=toggle_suppression)                 .tooltip('When on, YOLO predictions overlapping deleted boxes are suppressed')
+
+    ui.button('Clear Suppression History', icon='history', on_click=clear_suppression)             .props('color=grey outlined w-full')             .tooltip('Re-allow YOLO predictions that were previously deleted')
+
+    ui.separator()
+
+    ui.label('Remembered Boxes').classes('text-sm font-semibold text-gray-500')
+    ui.label('Click a manual box then "Remember Box" to auto-add it on future images when YOLO misses it.')             .classes('text-xs text-gray-400')
+
+    def clear_remembered():
+        remembered_boxes.clear()
+        notify('Remembered boxes cleared', type='positive')
+
+    ui.button('Clear Remembered Boxes', icon='bookmark_remove', on_click=clear_remembered)             .props('color=teal outlined w-full')             .tooltip('Stop auto-adding remembered boxes on future images')
 
 ui.separator()
 
