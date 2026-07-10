@@ -8,6 +8,8 @@ The key portions of this repository are:
 3. A notebook that helps you to make parameter files. 
 
 ## Web Interface
+We want to use computer vision object detection to better track individuals throughout a video (or rather, a stack of images for the video's frames). However, object detection is not perfect, and even though modern models are powerful, small mistakes can magnify over hundreds of images. Therefore, we created a web interface that allows users to manually label and (critically) correct model mistakes. 
+
 Included in the `web_interface` folder, our web interface was built and tested on Python 3.13.1 and allows for users to manual label image data with an existing YOLO model on their local machines. To use the web interface, you will need to make a conda environment with the following packages:
 - `nicegui` for the main web interface dependencies
 - `tkinter` for file selection. Note that you can specify directories and files with a prewritten path, but this package makes selecting a directory in your local machine's file structure easier
@@ -39,15 +41,15 @@ The pipeline can be run by navigating to the pipeline folder and running the fol
 
 where `<parameter_file>` is the path to your YAML file of parameters. These parameters allow for some customization of tolerance levels and filenames, but the most important parameters are the image directory and a reference height and width in pixels that can be compared to a distance in microns. For our data, we used an 18mm diameter petri dish, hence we only specify one dimension of micron distance. See `parameters/yaml_maker.ipynb` for more details on all the parameters.
 
+# Experiments and Past Code
+Below here is prior information that is not necessary to know for running the primary components of this repository; however, they are here for reference regarding all other materials in the repository, used during experimentation and building of the pipeline itself.
+
 There are several stages for this data analysis pipeline. To see the dependencies for each of the stages, see the dedicated sections below.
 1. **Video Segmentation and Image Preprocessing**: this involves separating the individual frames of the video, cropping them to only include the portion of interest, and converting to grayscale for ease of memory. (COMPLETED)
 2. **Object Detection**: done with YOLO26, this involves taking each of the processed images and detecting polyp and planula life cycle stages. The result of this should be a CSV containing relevant position and class information for an entire image stack. (IN PROGRESS)
 3. **Individual Tracking**: done with linear sum assignment, this takes the CSV from the above and reconstructs the path an individual takes, as well as inferring speed, size, and direction using micrometer units. (COMPLETED)
 
 Object detection, critically, is not perfect. It can sometimes miss objects or detect extra objects where there is nothing. To circumvent this, this repository features a web-based interface that allows for you to use an existing YOLO model for semi-automated labeling while also being able to correct any mistakes the model makes. 
-
-# Experiments and Past Code
-Below here is prior information that is not necessary to know for running the primary components of this repository; however, they are here for reference regarding all other materials in the repository, used during experimentation and building of the pipeline itself.
 
 ## Video Segmentation, Image Preprocessing
 This is done with the notebook `video_analysis/initial_processing.ipynb` using Python 3.9.23. The required packages and dependencies are listed as follows:
@@ -67,7 +69,7 @@ The training of the model and initial creation of functions to extract informati
 - `yaml` for working with YAML files
 
 ## Tracking
-This is currently still being improved. The notebook `position_tracking/tracking.ipynb` can be used to take the detection results from the previous phase and assign IDs to each detected individual. The required packages are listed as follows:
+The notebook `position_tracking/tracking.ipynb` can be used to take the detection results from the previous phase and assign IDs to each detected individual. The required packages are listed as follows:
 - `pandas` and `numpy` for working with dataframes and arrays
 - `scipy.optimize` for linear sum assignment; this is done with a modified Jonker-Volgenant algorithm (see `scipy` documentation, https://docs.scipy.org/doc/scipy/reference/generated/scipy.optimize.linear_sum_assignment.html).
 
