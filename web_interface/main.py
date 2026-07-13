@@ -127,11 +127,11 @@ def redraw():
             f'fill="{fill}" stroke="{color}" stroke-width="{stroke}"/>'
         )
         # Only draw the filled label tag for manual boxes
-        if not is_yolo:
-            svg += (
-                f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
-                f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
-            )
+        # if not is_yolo:
+        #     svg += (
+        #         f'<rect x="{x}" y="{y}" width="{len(label)*8+8}" height="20" fill="{color}"/>'
+        #         f'<text x="{x+4}" y="{y+14}" fill="white" font-size="12" font-weight="bold">{label}</text>'
+        #     )
     ii.content = svg
 
 # ── Class selector & box ops ───────────────────────────────────────────────────
