@@ -124,7 +124,7 @@ if __name__ == "__main__":
             print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
                   " has fewer labels than " + df_individuals[i+1].iloc[0]["image_filename"])
             
-        if df_lens[i] < df_lens[i+1]:
+        if df_lens[i] > df_lens[i+1]:
             print("Warning: " + df_individuals[i].iloc[0]["image_filename"] + 
                   " has more labels than " + df_individuals[i+1].iloc[0]["image_filename"])
 

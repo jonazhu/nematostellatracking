@@ -23,6 +23,8 @@ While the web interface can be used without knowing any of its other features, t
 
 A tutorial video is in progress and will be provided here in the future.
 
+**NOTE**: There is currently an issue with the use of `tkinter` to select a directory and model that drastically hinders interface performance. For the moment, please opt to type the full directory instead while this issue is resolved.
+
 ## The Pipeline and Parameter Generation
 
 Included in the `pipeline` folder, our analysis pipeline consists of a notebook for preprocessing videos, which should be done with human supervision (hence the notebook), and all the scripts necessary for automatic analysis of image data. 
