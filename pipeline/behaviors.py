@@ -73,6 +73,48 @@ def get_speed_and_direction(df):
     #not entirely necessary since we modify df itself
     return df
 
+def bin_dirs(df, num_bins=9):
+    boundaries = np.linspace(0, 2*np.pi, num=num_bins)
+    boundaries = boundaries - 0.5 * boundaries[1]
+    boundaries[0] = 0
+    boundaries = np.append(boundaries, 2*np.pi)
+
+    hist, bins = np.histogram(df["direction"], bins = boundaries)
+    hist[0] = hist[0] + hist[-1]
+    hist = hist[:-1]
+
+    return hist
+
+def entropy(bins):
+    total = np.sum(bins)
+    probs = bins / total
+
+    # log_probs = np.log2(probs)
+    # p_log_probs = probs * log_probs
+
+    # return -1 * np.sum(p_log_probs)
+    ent = 0
+    for i in range(len(probs)):
+        if bins[i] == 0:
+            continue
+        logp = np.log2(probs[i])
+        plogp = probs[i] * logp
+        ent -= plogp
+
+    return ent
+
+#now we calculate entropy across windows
+def find_window_entropy(df, window_size = 30, num_dirs = 8):
+    indices = np.linspace(0, len(df) + 1, window_size)
+
+    total_entropy = 0
+    for i in range(len(indices) - 1):
+        current_df = df.iloc[int(indices[i]):int(indices[i+1])]
+        local_entropy = entropy(bin_dirs(current_df, num_bins=num_dirs+1))
+        total_entropy += local_entropy
+
+    return total_entropy
+
 
 if __name__ == "__main__":
 
@@ -93,6 +135,8 @@ if __name__ == "__main__":
     dish_width_pixels = params["width_pixels"]
     time_between_frames = params["time_between_frames"]
     tolerance = params["distance_tolerance"] * (dish_diameter_microns / dish_height_pixels)
+    window_size = params["window_size"]
+    num_dirs = params["num_dirs"]
 
     #convert width, height to microns
     df["height"] = df["height"] * (dish_diameter_microns / dish_height_pixels)
@@ -112,6 +156,11 @@ if __name__ == "__main__":
     print("Full behaviors saved to " + params["behaviors"])
 
     distance_changes = []
+    min_widths = []
+    max_widths = []
+    min_heights = []
+    max_heights = []
+    spiral_scores = []
     for i in ids:
         distance_changes.append(euclidean_distance(
             df_individuals[i].iloc[0]["x_center"],
@@ -119,12 +168,21 @@ if __name__ == "__main__":
             df_individuals[i].iloc[-1]["x_center"],
             df_individuals[i].iloc[-1]["y_center"],
         ))
+        min_widths.append(np.min(df_individuals[i]["width"]))
+        max_widths.append(np.max(df_individuals[i]["width"]))
+        min_heights.append(np.min(df_individuals[i]["height"]))
+        max_heights.append(np.max(df_individuals[i]["height"]))
+        spiral_scores.append(find_window_entropy(df_individuals[i], window_size=window_size, num_dirs=num_dirs))
 
     df_summary = pd.concat([df_new[["id", "width", "height", "direction", "speed"]].groupby("id").mean(),
            df_new[["id", "distance"]].groupby("id").sum()], axis=1)
     df_summary.columns = ["mean_width_microns", "mean_height_microns", "avg_direction_radians", 
                         "avg_speed_mps", "total_distance_microns"]
-    df_summary["distance_change"] = distance_changes
+    df_summary["distance_change_microns"] = distance_changes
+    df_summary["min_width_microns"] = min_widths
+    df_summary["max_width_microns"] = max_widths
+    df_summary["min_height_microns"] = min_heights
+    df_summary["max_heigh_microns"] = max_heights
     df_summary.to_csv(params["summary"])
     
     print("Behavior summaries saved to " + params["summary"])

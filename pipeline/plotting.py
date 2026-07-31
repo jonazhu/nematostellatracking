@@ -184,7 +184,7 @@ if __name__ == "__main__":
 
     #plt.scatter(x = df_summary["total_distance_microns"], y = df_summary["distance_change"], c = df_summary["id"], color = colors)
     for i in ids:
-        plt.scatter(df_summary.iloc[i]["total_distance_microns"], df_summary.iloc[i]["distance_change"], color=colors[i])
+        plt.scatter(df_summary.iloc[i]["total_distance_microns"], df_summary.iloc[i]["distance_change_microns"], color=colors[i])
     plt.legend(ids, fontsize='x-small', loc='upper left', ncols=2)
     plt.xlabel("Total distance traveled (microns)")
     plt.ylabel("Change in distance from start to end (microns)")

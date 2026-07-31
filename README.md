@@ -23,7 +23,7 @@ While the web interface can be used without knowing any of its other features, t
 
 A tutorial video is in progress and will be provided here in the future.
 
-**NOTE**: There is currently an issue with the use of `tkinter` to select a directory and model that drastically hinders interface performance. For the moment, please opt to type the full directory instead while this issue is resolved.
+**NOTE**: There is currently an issue with the use of `tkinter` to select a directory and model that drastically hinders interface performance. If you encounter this issue, please opt to type the full directory instead as I work to resolve the issue.
 
 ## The Pipeline and Parameter Generation
 
