@@ -136,7 +136,7 @@ if __name__ == "__main__":
     time_between_frames = params["time_between_frames"]
     tolerance = params["distance_tolerance"] * (dish_diameter_microns / dish_height_pixels)
     window_size = params["window_size"]
-    num_dirs = params["num_dirs"]
+    num_dirs = params["num_directions"]
 
     #convert width, height to microns
     df["height"] = df["height"] * (dish_diameter_microns / dish_height_pixels)
@@ -182,7 +182,8 @@ if __name__ == "__main__":
     df_summary["min_width_microns"] = min_widths
     df_summary["max_width_microns"] = max_widths
     df_summary["min_height_microns"] = min_heights
-    df_summary["max_heigh_microns"] = max_heights
+    df_summary["max_height_microns"] = max_heights
+    df_summary["spiral_score"] = spiral_scores
     df_summary.to_csv(params["summary"])
     
     print("Behavior summaries saved to " + params["summary"])
